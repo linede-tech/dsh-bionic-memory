@@ -129,12 +129,15 @@ window.__ModuleLoader__.load({
       cacheAlert: '缓存告警',
       cacheBatch: '阶梯轮',
       cacheTokens: 'tokens',
-      voiceBank: '黄金语料库',
-      voiceBankCount: '已收录',
-      voiceBankTop: '每日注入',
-      voiceBankManual: '人工权重',
-      voiceBankEmpty: '还没有捕获到自然语感切片；用 /style save 亲自示范一条。',
-      voiceBankHint: '人工示范与用户正向反馈会进入这里，每晚 /dream 后取最高权重 5 条冻结进 Tier 1。',
+      voiceMirror: '语感镜像',
+      voiceFamiliarity: '熟稔度',
+      voiceAcquired: '耳濡目染',
+      voiceNotes: '睡眠语感笔记',
+      voiceNoNotes: '今晚还没复盘出新直觉；聊到自然时它会自己长出来。',
+      voiceMoments: '高共鸣瞬间',
+      voiceNoMoments: '还没有足够清晰的共鸣瞬间',
+      voiceHint: '全部来自你们真实的交流；没有外部台词本。每晚 /dream 后会冻结进 Tier 1。',
+      voiceLevel: '阶段',
     };
 
     const en = {
@@ -261,12 +264,15 @@ window.__ModuleLoader__.load({
       cacheAlert: 'Cache alert',
       cacheBatch: 'batch rounds',
       cacheTokens: 'tokens',
-      voiceBank: 'Golden voice bank',
-      voiceBankCount: 'collected',
-      voiceBankTop: 'daily top',
-      voiceBankManual: 'manual weight',
-      voiceBankEmpty: 'No natural-voice slices captured yet; teach one with /style save.',
-      voiceBankHint: 'Manual examples and positive feedback collect here; after each /dream the top five are frozen into Tier 1.',
+      voiceMirror: 'Voice mirror',
+      voiceFamiliarity: 'familiarity',
+      voiceAcquired: 'acquired words',
+      voiceNotes: 'Sleep voice notes',
+      voiceNoNotes: 'No new intuition yet; it grows from real conversation.',
+      voiceMoments: 'Resonance moments',
+      voiceNoMoments: 'No clear resonance moment yet',
+      voiceHint: 'All grown from your real conversations; no canned lines. Frozen into Tier 1 after /dream.',
+      voiceLevel: 'stage',
     };
 
     const CSS = `
@@ -690,8 +696,8 @@ window.__ModuleLoader__.load({
         ),
         h(
           Card,
-          { label: t('voiceBank') },
-          data.style_bank
+          { label: t('voiceMirror') },
+          data.voice_engine
             ? h(
                 'div',
                 null,
@@ -701,34 +707,72 @@ window.__ModuleLoader__.load({
                   h(
                     'span',
                     { className: 'bionic-chip' },
-                    `${t('voiceBankCount')} ${data.style_bank.count || 0}/${data.style_bank.max || 0}`,
+                    `${t('voiceFamiliarity')} ${Math.round((data.voice_engine.familiarity?.score || 0) * 100)}%`,
                   ),
                   h(
                     'span',
                     { className: 'bionic-chip' },
-                    `${t('voiceBankTop')} ${data.style_bank.top_n || 5}`,
+                    `${t('voiceLevel')} ${data.voice_engine.familiarity?.level || '初识'}`,
                   ),
                   h(
                     'span',
                     { className: 'bionic-chip' },
-                    `${t('voiceBankManual')} ${data.style_bank.manual_weight || 10}`,
+                    `${t('voiceAcquired')} ${(data.voice_engine.acquired_vocabulary || []).length}`,
                   ),
                 ),
-                (data.style_bank.top || []).length
+                h(
+                  'div',
+                  { className: 'bionic-bar' },
+                  h('div', {
+                    className: 'bionic-bar-fill',
+                    style: { width: `${Math.min(100, Math.round((data.voice_engine.familiarity?.score || 0) * 100))}%` },
+                  }),
+                ),
+                (data.voice_engine.acquired_vocabulary || []).length
                   ? h(
-                      'ul',
-                      { className: 'bionic-list' },
-                      (data.style_bank.top || []).slice(0, 3).map((entry) =>
-                        h(
-                          'li',
-                          { key: entry.id },
-                          h('span', { className: 'bionic-tag', style: { marginRight: 5 } }, `${entry.source} ${entry.weight}`),
-                          (entry.assistant || '').slice(0, 110),
+                      'div',
+                      { className: 'bionic-muted', style: { marginTop: 5 } },
+                      `${t('voiceAcquired')}：${(data.voice_engine.acquired_vocabulary || []).map((entry) => `“${entry.word}”`).join('、')}`,
+                    )
+                  : null,
+                h(
+                  'div',
+                  { className: 'bionic-muted', style: { marginTop: 5 } },
+                  data.voice_engine.familiarity?.hint || '',
+                ),
+                (data.voice_engine.self_discovered_voice_notes || []).length
+                  ? h(
+                      'div',
+                      { style: { marginTop: 6 } },
+                      h('div', { className: 'bionic-muted' }, t('voiceNotes')),
+                      h(
+                        'ul',
+                        { className: 'bionic-list' },
+                        (data.voice_engine.self_discovered_voice_notes || []).map((note) =>
+                          h('li', { key: note }, note),
                         ),
                       ),
                     )
-                  : h('div', { className: 'bionic-muted' }, t('voiceBankEmpty')),
-                h('div', { className: 'bionic-muted', style: { marginTop: 5 } }, t('voiceBankHint')),
+                  : h('div', { className: 'bionic-muted', style: { marginTop: 5 } }, t('voiceNoNotes')),
+                (data.voice_engine.organic_resonance_moments || []).length
+                  ? h(
+                      'div',
+                      { style: { marginTop: 6 } },
+                      h('div', { className: 'bionic-muted' }, t('voiceMoments')),
+                      h(
+                        'ul',
+                        { className: 'bionic-list' },
+                        (data.voice_engine.organic_resonance_moments || []).map((moment) =>
+                          h(
+                            'li',
+                            { key: `${moment.at}-${moment.vibe}` },
+                            `[${moment.vibe}] ${moment.user_msg} → ${moment.my_reply}`,
+                          ),
+                        ),
+                      ),
+                    )
+                  : null,
+                h('div', { className: 'bionic-muted', style: { marginTop: 5 } }, t('voiceHint')),
               )
             : h('div', { className: 'bionic-muted' }, t('noContextMetabolism')),
         ),

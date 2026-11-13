@@ -5,6 +5,7 @@ node_modules/
 .context-metabolism-*/
 .cache-prefix-*/
 .style-bank-*/
+.voice-engine-*/
 *.db
 *.db-wal
 *.db-shm
@@ -14,6 +15,7 @@ meta-evolution.json
 context-metabolism.json
 handover.json
 daily-frozen-memory.json
+user_linguistics.json
 style_bank.json
 pending-apply.json
 proposals/

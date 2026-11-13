@@ -33,7 +33,7 @@ const RULES = fs.readFileSync(path.join(PACKAGE_DIR, 'prompt-template.md'), 'utf
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.6.0';
+const BUILD = 'bionic-0.7.1';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -474,7 +474,15 @@ export function apply(ctx, rawConfig) {
     const id = String(session.id);
     let buffer = buffers.get(id);
     if (!buffer) {
-      buffer = { user: [], assistant: [], turn: 0, timer: null, preset: session.header?.agentPreset };
+      buffer = {
+        user: [],
+        assistant: [],
+        turn: 0,
+        timer: null,
+        preset: session.header?.agentPreset,
+        userAt: 0,
+        assistantAt: 0,
+      };
       buffers.set(id, buffer);
     }
     return buffer;
@@ -490,8 +498,12 @@ export function apply(ctx, rawConfig) {
     const userText = buffer.user.join('\n').trim();
     const assistantText = buffer.assistant.join('\n').trim();
     const turnNumber = Number.isFinite(turn) ? turn : buffer.turn;
+    const userAt = Number(buffer.userAt) || 0;
+    const assistantAt = Number(buffer.assistantAt) || 0;
     buffer.user = [];
     buffer.assistant = [];
+    buffer.userAt = 0;
+    buffer.assistantAt = 0;
     if (!userText && !assistantText) return null;
 
     let current;
@@ -507,6 +519,8 @@ export function apply(ctx, rawConfig) {
         user_text: userText,
         assistant_text: assistantText,
         source: 'session',
+        user_at: userAt,
+        assistant_at: assistantAt,
       });
       if (result?.stored) {
         logger?.debug?.(`[bionic-memory] episode ${result.episode_id} stored from ${id}`);
@@ -542,6 +556,8 @@ export function apply(ctx, rawConfig) {
 
     if (event.type === 'turn/start') {
       buffer.turn = event.data?.turn ?? buffer.turn;
+      buffer.userAt = 0;
+      buffer.assistantAt = 0;
       return;
     }
 
@@ -557,6 +573,7 @@ export function apply(ctx, rawConfig) {
         buffer.user = [];
       }
       buffer.user.push(text);
+      if (!buffer.userAt) buffer.userAt = Number(event.time) || Date.now();
       const handleUserMessage = (current) => {
         try {
           current.noteUserActivity();
@@ -583,6 +600,7 @@ export function apply(ctx, rawConfig) {
       if (event.data?.interrupted) return;
       const text = textOfContent(event.data?.message?.content);
       if (text) buffer.assistant.push(text);
+      if (text || !buffer.assistantAt) buffer.assistantAt = Number(event.time) || Date.now();
       if (event.data?.usage) {
         try {
           if (engine) engine.toolSchemaHash = toolSchemaHash();
@@ -746,6 +764,7 @@ export function apply(ctx, rawConfig) {
         if (!result.ok) return { kind: 'error', text: `做梦失败：${result.error}` };
         const dream = result.dream;
         const meta = result.meta;
+        const voice = result.voice;
         return {
           kind: 'success',
           text: commandText([
@@ -755,6 +774,7 @@ export function apply(ctx, rawConfig) {
             dream.narrative,
             '——梦里 80% 的细节已经忘掉了。',
             `余韵：${dream.afterglow}`,
+            voice?.notes?.length ? `语感反刍：${voice.notes.join('；')}` : '',
             meta?.summary ? `元认知进化：${meta.summary}` : '',
             meta?.tier3?.changed ? '有一个代码进化提案待审阅：使用 `/evolve approve` 查看并决定是否合入。' : '',
           ]),
@@ -918,9 +938,9 @@ export function apply(ctx, rawConfig) {
 
   commandDisposers.push(
     ctx.commands.register({
-      name: 'style',
-      description: '自然语感黄金语料库：查看、保存和删除 Few-Shot 对话切片',
-      input: { hint: '<status | list | save [范例文本] | delete <id>>' },
+      name: 'voice',
+      description: '自然语感养成：查看熟稔度、被传染的口癖、句式呼吸与睡眠反刍笔记',
+      input: { hint: '<status | notes | lexicon>' },
       handler: async (invocation) => {
         if (!isActiveFor(invocation?.agent)) {
           return { kind: 'error', text: '永续记忆模式专用指令：请切换到「永续记忆模式」后再使用。' };
@@ -931,66 +951,62 @@ export function apply(ctx, rawConfig) {
         } catch (error) {
           return { kind: 'error', text: `记忆引擎不可用：${error?.message || error}` };
         }
-        const bank = current.styleBank;
-        if (!bank) {
-          return { kind: 'error', text: '黄金语料库未启用（styleBankEnabled 为 false）。' };
+        const voice = current.voiceEngine;
+        if (!voice) {
+          return { kind: 'error', text: '自然语感养成引擎未启用（voiceEngineEnabled 为 false）。' };
         }
         const raw = String(invocation?.rawInput || '').trim();
-        const [head, ...tail] = raw.split(/\s+/);
+        const [head] = raw.split(/\s+/);
         const action = (head || 'status').toLowerCase();
-        const agent = invocation?.agent;
         try {
-          if (action === 'status') {
-            const state = bank.state();
-            const lines = [
-              '【自然语感黄金语料库】',
-              `已收录 ${state.count}/${state.max} 条 · 每日冻结 Top ${state.top_n} · 人工示范权重 ${state.manual_weight}`,
-              `文件：${state.file}`,
-              state.top.length ? '当前最高权重：' : '还是空的。',
-              ...state.top.map(
-                (entry, index) =>
-                  `${index + 1}. [${entry.id}] ${entry.source} · 权重 ${entry.weight} · 命中 ${entry.hits}\n   用户：${entry.user}\n   回应：${entry.assistant}`,
-              ),
-            ];
-            return { kind: 'success', text: commandText(lines) };
-          }
-          if (action === 'list') {
-            const entries = bank.all().slice(0, 20);
-            if (!entries.length) return { kind: 'success', text: '语料库还是空的。' };
-            const lines = entries.map(
-              (entry, index) =>
-                `${index + 1}. [${entry.id}] ${entry.source} · 权重 ${entry.weight} · ${new Date(entry.last_seen).toISOString().slice(0, 10)}\n   用户：${entry.user.slice(0, 80)}\n   回应：${entry.assistant.slice(0, 120)}`,
-            );
-            return { kind: 'success', text: commandText(['【黄金语料 Top 20】', ...lines]) };
-          }
-          if (action === 'save') {
-            const text = tail.join(' ').trim();
-            const result = current.saveStyleExample({
-              session_id: String(agent?.id || ''),
-              assistant_text: text,
-            });
-            if (!result.ok) return { kind: 'error', text: `保存失败：${result.error}` };
-            const entry = result.entry;
+          const snap = voice.stateSnapshot();
+          if (action === 'notes') {
             return {
               kind: 'success',
               text: commandText([
-                `已写入黄金语料库：${entry.id}（人工示范，权重 ${entry.weight}）。`,
-                '我会在今晚 `/dream` 编译每日冻结记忆时，把最高权重的切片放进 Tier 1 前缀，明天开始模仿。',
+                '【睡眠语感反刍】',
+                snap.self_discovered_voice_notes.length
+                  ? snap.self_discovered_voice_notes.map((note) => `- ${note}`).join('\n')
+                  : '还没有领悟出新的语感直觉。今晚 /dream 后会自然浮现。',
+                snap.organic_resonance_moments.length ? '最近的高共鸣瞬间：' : '',
+                ...snap.organic_resonance_moments.map(
+                  (moment) => `- [${moment.vibe}] 对方：“${moment.user_msg}” → 我：“${moment.my_reply}”`,
+                ),
               ]),
             };
           }
-          if (action === 'delete') {
-            const result = bank.remove(tail.join(' ').trim());
-            return result.ok
-              ? { kind: 'success', text: `已删除语料 ${result.entry.id}。` }
-              : { kind: 'error', text: result.error || '删除失败' };
+          if (action === 'lexicon') {
+            return {
+              kind: 'success',
+              text: commandText([
+                '【耳濡目染词库】',
+                snap.acquired_vocabulary.length
+                  ? snap.acquired_vocabulary
+                      .map((entry) => `- “${entry.word}” 被你说过 ${entry.count} 次，我又跟着用了 ${entry.assistant_uses} 次`)
+                      .join('\n')
+                  : '还没有词汇被传染；先自然聊几天，重复超过 3 次的词会自动移入。',
+              ]),
+            };
           }
+          const metrics = snap.metrics;
           return {
-            kind: 'error',
-            text: '用法：`/style status`、`/style list`、`/style save [范例文本]`、`/style delete <id>`。',
+            kind: 'success',
+            text: commandText([
+              '【自然语感养成】',
+              `熟稔度：${Number(snap.familiarity.score).toFixed(2)} / 1.00 · ${snap.familiarity.level}——${snap.familiarity.hint}`,
+              `累计 ${snap.familiarity.turns} 轮 · 共同经历 ${snap.familiarity.shared_events} · 情感共鸣 ${snap.familiarity.resonance} 次`,
+              `句式：平均 ${metrics.avg_sentence_chars} 字/句 · 短句占 ${Math.round(metrics.short_sentence_ratio * 100)}% · 短句连发占 ${Math.round(metrics.short_burst_ratio * 100)}%`,
+              `呼吸：空格 ${metrics.space_per_turn}/轮 · 省略号 ${metrics.ellipsis_per_turn}/轮 · 波浪号 ${metrics.tilde_per_turn}/轮 · 问号 ${metrics.question_per_turn}/轮`,
+              `语气词：${metrics.top_interjections.join('、') || '还没明显偏好'}`,
+              `耳濡目染：${snap.acquired_vocabulary.map((entry) => `“${entry.word}”`).join('、') || '还没被传染'}`,
+              snap.self_discovered_voice_notes.length
+                ? `最近领悟：\n${snap.self_discovered_voice_notes.map((note) => `  - ${note}`).join('\n')}`
+                : '最近领悟：今晚还没复盘',
+              `文件：${snap.file}`,
+            ]),
           };
         } catch (error) {
-          return { kind: 'error', text: `语料库操作失败：${error?.message || error}` };
+          return { kind: 'error', text: `语感状态读取失败：${error?.message || error}` };
         }
       },
     }),

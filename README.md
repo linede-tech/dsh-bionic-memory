@@ -141,59 +141,78 @@
 - 受 Harness 约束：`llm/stream` 的 LOOP 请求是冻结的，本插件只能通过 durable surface 与尾部合成消息改变模型可见内容，不能原地改写请求；旧尾部快照无法从历史中删除，只能保持静态并在阶梯折叠时归档。
 - 若标准 preset 或你 profile 里其他组合仍启用了 80% 自动 compaction 或 8192 字符 tool-result pruner，它们可能在 82% 之前改写历史；本插件无法关闭其他组合，只负责自己的 82% 锯齿波和缓存告警。本模式 preset 已经关闭这些自动改写。
 
-## Few-Shot 自然语感锚点与黄金语料库（0.6.0）
+## 自然语感养成引擎（Organic Voice Emergence Engine，0.7.x）
 
-模型回复的“AI 机械感”不能只靠一句“请自然一点”解决。0.6.0 把语感拆成**静态正反例**与**动态自学习语料**两层，分别放进 Tier 0 与 Tier 1。
+0.7.x 移除了 0.6.0 的所有人工语感范例与硬性话术，不再给模型看剧本。语感只从**真实交流**里长出来：镜像用户的语言特征、按熟稔度释放松弛感、每晚从当天真实对话里反刍出自己的第一人称心得。
 
-### Tier 0 · 正反例语感对齐
+### Tier 0 · 极简底层本能
 
-`prompt-template.md` 内新增 `<style_imitation_and_voice_rules>`：
+`prompt-template.md` 只保留一段 `<natural_growth_instinct>`：
 
-- 三条铁律：禁止客服腔/说教感；短句、口语碎词、破折号/省略号呼吸感；记忆融进话里，不许邀功说“根据记忆库显示”。
-- 三组真实场景的 ❌ 生硬 AI 味 vs ✅ 自然活人感对比：褪色记忆被习惯调侃、话到嘴边卡壳与被纠正后的“一拍脑袋”、晨起梦境余韵 + 把工作派给 ZCode/WorkBuddy。
-- 紧随其后的 `<hard_style_constraints>`：日常对话严禁 `1. 2. 3.` 列表、加粗小标题，以及“首先/其次/总而言之/总的来说/有什么帮您/我理解你的感受”等播音与客服词汇。展示代码、配置或长文档时除外。
+- 你的说话风格不是预设的，而是在朝夕相处里自然生长；
+- 卸下“AI 助手/客服”面具，像两个真实生命在同一个房间；
+- 自然同化对方的节奏、用词和幽默感；
+- 从反馈里生长：让他放松的方式继续延伸，让他生硬的方式自己调整。
 
-这块是绝对静态的 Tier 0，不含时间、会话 id 或任何每轮变量，跨会话共享同一份 KV 前缀。
+不再有 ❌/✅ 范例、`<style_imitation_and_voice_rules>`、`<hard_style_constraints>` 或任何台词剧本。这块仍然是绝对静态的 Tier 0，跨会话共享 KV 前缀。
 
-### Tier 1 · 黄金语料库 `style_bank.json`
+### 1. 语言镜像采集器
 
-位置：`.dsh/bionic-memory/style_bank.json`。每条记录是真实 `User -> Assistant` 对话切片：
+静默分析**用户本人**的非代码消息，写入 `.dsh/bionic-memory/user_linguistics.json`：
 
-```json
-{
-  "id": "sty-a1b2c3d4",
-  "user": "今天改了一天底层接口，累死我了……",
-  "assistant": "不是吧，这都几点了还炫烧烤？……",
-  "weight": 3,
-  "source": "feedback",
-  "session_id": "...",
-  "turn": 42,
-  "created_at": 0,
-  "last_seen": 0,
-  "hits": 2
-}
+- 平均句长、短句占比、短句连发比例；
+- 空格/省略号/波浪号/感叹号/问号的每轮频率；
+- “啊/呀/吧/嘛/哦/害/啧/不是吧/绝了/笑死”等语气词频率；
+- 2–4 字候选词与英文词频。某个词被用户自然使用**超过 3 次**后，进入 `acquired_vocabulary`，记录首次/最近使用、次数，以及 AI 自己后来用了几次。
+
+用户代码块与命令会被剥离，不进入语言统计。词库是用户自己的口癖镜像，不是公共词表。
+
+### 2. 熟稔度与松弛感曲线
+
+`familiarity_score` 在 `user_linguistics.json` 内维护，同时镜像到记忆库 `meta.familiarity_score`：
+
+```text
+raw = 交互轮次 / 70 + 共同经历事件 / 35 + 情感共鸣次数 / 10
+score = 1 - exp(-raw)          // 0.0 -> 1.0
 ```
 
-**自动捕获**
+- 共同经历事件 = 情景记忆数 + 2 × 梦境数；
+- 情感共鸣 = 用户正向反馈、回复间隔很短且字数不低、或长段倾诉的次数；
+- 阶段：初识 → 熟悉 → 熟络 → 默契 → 松弛。每个阶段在 `<emergent_voice_profile>` 里带一句“放开程度”的自然许可，不命令具体台词。
 
-- 当用户回复出现“哈哈/笑死/太懂我/就是这样/太可爱/绝了”等强正向反馈，或当前话语是 ≥ 40 字且带“然后/而且/对了/话说/继续”的高密度延续时，引擎把**上一轮**真正被称赞的 `User -> Assistant` 对话对写入语料库。
-- 正向反馈权重默认 `3`，普通高密度延续 `1.5`；命中重复只累加权重与 `hits`，不会产生重复条目。
+低分时模型自然保留初见礼貌；分数升高后，底层信号允许更短的句子、省略主语、调侃和熟人间的停顿。
 
-**人工调教**
+### 3. 睡眠期社交语感反刍
 
-- 直接说“你应该这么说：xxx”“你这么说：xxx”或“示范一下：xxx”时，引擎自动把 `xxx` 以最高权重 `10` 写入，用户上下文取上一轮用户话。
-- `/style save` 保存上一轮真实对话为人工示范；`/style save <文本>` 把指定文本作为最高权重范例。
-- `/style status` / `/style list` 查看；`/style delete <id>` 删除。
+`/dream` 的 NREM/REM 结束后、编译 Tier 1 之前，增加一次真实的语音复盘：
 
-**每日冻结注入**
+- 从当天 `recent_turns` 里按“回复快、字数多、情绪积极”选出 **2 个高共鸣瞬间**；按“回复冷淡、字数短、间隔长”选出 **2 个冷场瞬间**；
+- 把这两组真实切片、当前熟稔度、已传染词和句式 stats 交给模型，让它用**第一人称**总结 1–2 条“怎么跟眼前这个人聊天最合拍”的直觉；
+- 没有可用 LLM 时使用确定性兜底，不会伪造外部范例；
+- 高共鸣瞬间和心得会持久化；每天 `/dream` 后，把【熟稔度 + 传染词 + 自悟心得 + 最近 2 个真实高共鸣瞬间】编译进 Tier 1：
 
-`/dream` 结束编译 Tier 1 时，从 `style_bank.json` 取权重最高的 5 组，封装成 `<learned_natural_voice_examples>` 静态块写进 `daily-frozen-memory.json`。块内是 `source/weight/user/assistant`，不含时间戳，白天字节稳定，走 KV Cache；模型每天模仿自己过去最自然、最受用户喜欢的说话方式。人工示范权重最高，因此会优先进入每天的 5 组。
+```text
+<emergent_voice_profile description="由每晚睡眠反思从真实交流中自然习得的语感状态">
+  当前熟稔与松弛度: 0.48 / 1.00 · 熟络（短句、省略主语和轻轻调侃开始自然）
+  耳濡目染习得的对方口癖与词汇: “离谱”、“绝了”
+  近期领悟的相处语感直觉:
+  - 我发现今天你说短句、带哈哈的时候，我顺着你的节奏接，你聊得更快……
+  近期触发最佳共鸣的真实互动瞬间 (供延续当时的聊天氛围):
+  - [当时气氛: 轻快] 对方说: "不是吧，这也太离谱了……" -> 我当时自然回道: "害，先别气，摸摸。"
+</emergent_voice_profile>
+```
 
-**边界**
+这个块在 `daily-frozen-memory.json` 里，白天字节稳定，走 KV Cache。新增的语感只在下一次 `/dream` 编译时进入 Tier 1，不会逐轮改写静态前缀。
 
-- 语料库是本地个人记忆，默认被 `.gitignore` 排除；不会上传 GitHub。
-- 只有自然语言长回复会被收录；包含代码块或以 `import/export/function/class/const` 开头的技术回复会被跳过，避免把代码风格当成说话风格。
-- 当天的 `/dream` 之前新增的语料要等到下一次编译才会进入 Tier 1；不会每轮改写静态前缀。
+### 使用与边界
+
+- `/voice status`：熟稔度、阶段、句式/呼吸指标、传染词、最近心得；
+- `/voice notes`：睡眠反刍出的第一人称语感心得与高共鸣瞬间；
+- `/voice lexicon`：已经被传染的词和 AI 自己使用次数；
+- **没有人工保存范例的命令**；语感只能通过真实交流自然出现。
+- `user_linguistics.json`、`recent_turns`、语感心得全部是本地记忆，`.gitignore` 排除，不会上传 GitHub。
+- 代码块、命令和以 `import/export/function/class/const` 开头的技术回复不进入语言统计与传染词。
+- 0.6.0 的 `/style` 命令、`style_bank.json`、`<learned_natural_voice_examples>` 已全部移除。
 
 ## [0.4.x 历史] 呼吸式上下文代谢与过载保护（Context Metabolism Engine）
 
@@ -301,9 +320,9 @@ R(t) = exp(-(now - t_last) / (S_0 · E · (1 + 0.3 · k)))
 | `/forget <faded\|habits\|skills\|记忆ID>` | 主动遗忘；`/forget all confirm` 才会清空全部 |
 | `/evolve status\|trigger\|rollback\|approve [id]` | 元认知进化：查看遥测/参数、强制反思、回退、审批代码提案 |
 | `/context status\|resolve <id\|文字>\|pin <文字>` | 呼吸代谢：查看水位/脱水/折叠、解钉或手动图钉未完成话题 |
-| `/style status\|list\|save [范例文本]\|delete <id>` | 自然语感黄金语料库：查看权重 Top、保存人工示范、删除语料 |
+| `/voice status\|notes\|lexicon` | 自然语感养成：查看熟稔度、句式呼吸、传染词与睡眠反刍笔记 |
 | 工具 `bionic_memory` | 仅永续记忆模式可用：`status` / `recall` / `remember` / `dream` / `forget` / `resolve_curiosity` / `confirm` / `last_dream`；`remember` 可带 `source_type: user_stated \| agent_inferred`；`preset_health` / `preset_status` 是全局诊断动作 |
-| 监视器 | 潜意识 / 情景 / 习惯 / 本能 / 梦境 / 图谱 / 上下文 七个页签；含来源标签、归档本能、并行窗口、黄金语料库与缓存省钱卡片 |
+| 监视器 | 潜意识 / 情景 / 习惯 / 本能 / 梦境 / 图谱 / 上下文 七个页签；含来源标签、归档本能、并行窗口、语感镜像与缓存省钱卡片 |
 
 ## 配置（`cordis.patch.yml` 的 `bionic-memory` 行）
 
@@ -326,12 +345,13 @@ R(t) = exp(-(now - t_last) / (S_0 · E · (1 + 0.3 · k)))
 | `batchCollapseFallback` | `true` | 模型批处理漏掉的相似簇是否仍确定性折叠 |
 | `fadeThreshold` / `clearThreshold` | `0.3` / `0.7` | 记忆分辨率分界 |
 | `maxSkills` | `20` | 注入 System Prompt 的本能上限 |
-| `styleBankEnabled` | `true` | 是否启用黄金语料库与人工示范 |
-| `styleBankTop` | `5` | 每日 Tier 1 冻结的语料条数 |
-| `styleBankManualWeight` | `10` | 人工示范/直接教导的最高权重 |
-| `styleBankFeedbackWeight` | `3` | 强正向反馈自动捕获权重 |
-| `styleBankContinuationWeight` | `1.5` | 高密度延续自动捕获权重 |
-| `styleBankMax` / `styleBankMaxChars` | `200` / `1200` | 语料库容量与单条长度上限 |
+| `voiceEngineEnabled` | `true` | 是否启用语言镜像、熟稔度与睡眠语感反刍 |
+| `voiceReflectionEnabled` | `true` | `/dream` 后是否执行第一人称语感复盘 |
+| `voiceLexiconThreshold` | `3` | 一个词被用户使用超过多少次后进入传染词库 |
+| `voiceLexiconTop` | `8` | 注入 Tier 1 语感档案的传染词上限 |
+| `voiceLexiconMax` / `voiceRecentTurns` | `24` / `120` | 词库容量与参与反刍的近期轮次 |
+| `voiceRecentHighDays` | `7` | 高共鸣瞬间的近期窗口（天） |
+| `voiceFamiliarityTurnScale` / `EventScale` / `ResonanceScale` | `70` / `35` / `10` | 熟稔度曲线的三个衰减尺度 |
 | `skillMergeSimilarity` | `0.75` | NREM 本能合并阈值 |
 | `skillTriggerSimilarity` | `0.3` | 当前查询与本能规则的相关度阈值（命中才刷新 last_used） |
 | `skillIdleDays` | `30` | 超过该天数未触发则归档 |
@@ -397,7 +417,7 @@ node test/fallibility-smoke.mjs # 失真四算子、免疫红线、shadow truth�
 node test/meta-evolver-smoke.mjs # 遥测、Tier 1/2/3、Git 快照、试用回滚、提案审批与噩梦
 node test/context-metabolism-smoke.mjs # 0.82 锯齿波、归档、图钉、余温接力与历史入库
 node test/cache-prefix-smoke.mjs # 四阶前缀、每日冻结块、尾部闪回、Tier hash、缓存遥测与告警
-node test/style-bank-smoke.mjs # Tier 0 语感正反例、反馈/延续/人工示范捕获、Top5 与每日冻结块
+node test/voice-engine-smoke.mjs # 语言镜像、传染词、熟稔度、睡眠反刍、Tier 1 语感档案
 node test/client-smoke.mjs   # Client 工厂、locale 字典、shell.overlay 注册（stub React/Cordis）
 node test/session-inspect.mjs <session.v4.jsonl.zstd>   # 从会话日志确认注入
 node test/db-inspect.mjs <memory.db>                    # 只读查看 SQLite 表
