@@ -27,6 +27,21 @@
 
 `broken` 会给出具体缺失配置；`composed: true` 且 `leakedServices: []` 才表示 composition 真正挂载。需要完整 roster 时用 `preset_status`。本包 0.1.7 起的 patch 已为 `plan-mode` 补上非空 `section`，修复了此前的 `PlanModeConfig needs a non-empty section` 激活失败。
 
+### 数据目录稳定性（重要）
+
+`dataDir` 为空时，引擎按「最近活跃会话的工作目录 → `workingDirectory.defaultDirectory` → 进程 cwd」解析。如果 DSH 重启后先加载监视器、恢复出会话之前就 boot 了引擎，可能落到 profile 目录（例如 `<profile>/.dsh/bionic-memory`），看起来像记忆被清空；旧数据通常仍在原 workspace 的 `.dsh/bionic-memory`。
+
+任选一种方式固定数据目录：
+
+- 在本地 `cordis.patch.yml` 给 `bionic-memory` 行配置绝对 `dataDir`（不要把个人路径提交到公开仓库）；
+- 或放置一个 profile-local 指针文件 `<profile>/.dsh/bionic-memory-location.json`：
+
+```json
+{ "dataDir": "C:\\Users\\you\\Documents\\deepseek-harness\\default-workspace\\.dsh\\bionic-memory" }
+```
+
+插件每次 boot 会优先读取，其次才回退到会话目录。也支持环境变量 `BIONIC_MEMORY_DATA_DIR`。该指针不属于仓库内容。
+
 ## 四层记忆
 
 1. **潜意识白板**：情绪基调（valence / arousal）、今日梦境余韵、未解决的好奇钩子。

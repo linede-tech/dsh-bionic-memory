@@ -33,7 +33,7 @@ const RULES = fs.readFileSync(path.join(PACKAGE_DIR, 'prompt-template.md'), 'utf
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.7.1';
+const BUILD = 'bionic-0.7.2';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -84,10 +84,71 @@ export function apply(ctx, rawConfig) {
     return process.cwd();
   }
 
+  function profileDirectory() {
+    try {
+      const profileContext = ctx.get?.('profileContext');
+      return (
+        String(process.env.DSH_PROFILE_DIR || '').trim()
+        || profileContext?.profileDir
+        || profileContext?.dir
+        || profileContext?.directory
+        || ''
+      );
+    } catch {
+      return String(process.env.DSH_PROFILE_DIR || '').trim();
+    }
+  }
+
+  function readDataDirPointer() {
+    const candidates = [];
+    const env = String(process.env.BIONIC_MEMORY_DATA_DIR || '').trim();
+    if (env) candidates.push({ file: '', value: env });
+    const profileDir = profileDirectory();
+    if (profileDir) {
+      candidates.push({ file: path.join(profileDir, '.dsh', 'bionic-memory-location.json') });
+    }
+    try {
+      const base = baseDirectory();
+      if (base) candidates.push({ file: path.join(base, '.dsh', 'bionic-memory-location.json') });
+    } catch {
+      /* base is only a hint */
+    }
+    for (const candidate of candidates) {
+      try {
+        let value = candidate.value;
+        if (candidate.file) {
+          if (!fs.existsSync(candidate.file)) continue;
+          const raw = fs.readFileSync(candidate.file, 'utf8').trim();
+          if (!raw) continue;
+          try {
+            const parsed = JSON.parse(raw);
+            value = typeof parsed === 'string' ? parsed : parsed?.dataDir || parsed?.dir || '';
+          } catch {
+            value = raw;
+          }
+        }
+        const configured = String(value || '').trim().replace(/^["']|["']$/g, '');
+        if (!configured) continue;
+        if (path.isAbsolute(configured)) return configured;
+        if (candidate.file) return path.resolve(path.dirname(candidate.file), configured);
+        return path.resolve(configured);
+      } catch {
+        /* try the next pointer */
+      }
+    }
+    return '';
+  }
+
   function resolveDataDir() {
+    const explicit = String(config.dataDir || '').trim();
+    if (explicit) {
+      const base = baseDirectory();
+      return path.isAbsolute(explicit) ? explicit : path.join(base, explicit);
+    }
+    const pointer = readDataDirPointer();
+    if (pointer) return pointer;
     const base = baseDirectory();
-    if (!config.dataDir) return path.join(base, '.dsh', 'bionic-memory');
-    return path.isAbsolute(config.dataDir) ? config.dataDir : path.join(base, config.dataDir);
+    return path.join(base, '.dsh', 'bionic-memory');
   }
 
   // -------------------------------------------------------- preset diagnostics
