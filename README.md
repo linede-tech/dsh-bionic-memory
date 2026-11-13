@@ -15,6 +15,8 @@
 
 安装后 Host 插件与 preset 行都是 `active`；preset 在新建会话的 Agent 选择器里显示为「永续记忆模式」。记忆只在选了「永续记忆模式」的会话里注入与记录：其他模式不注入 `<bionic_memory_context>`、不观察轨迹，`/memory`、`/dream`、`/forget` 与 `bionic_memory` 读写动作都会被拒绝。`preset_status` 是唯一全局可用的诊断动作。
 
+> 选择「永续记忆模式」后，`session.header.agentPreset` 仍可能显示 `standard`：header 记录的是会话创建时的 preset，实际生效的是 `agent-preset/selected` 事件提交的 composition。0.5.3 起插件以 `agentPresets.presetForSession(session)` + `composedPreset(agent.ctx)` 判断，选择后立即生效并主动 boot。若 `bionic_memory` 仍被拒绝，说明这次选择没有真正提交到会话日志，请新建会话并在发送第一条消息前确认选择「永续记忆模式」。
+
 ### Preset 加载诊断
 
 若 Agent 选择器里的「永续记忆模式」显示“加载失败”，在任意会话调用：

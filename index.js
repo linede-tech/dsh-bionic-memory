@@ -33,7 +33,7 @@ const RULES = fs.readFileSync(path.join(PACKAGE_DIR, 'prompt-template.md'), 'utf
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.5.2';
+const BUILD = 'bionic-0.5.3';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -236,7 +236,29 @@ export function apply(ctx, rawConfig) {
         agentOrSession && typeof agentOrSession.id === 'string' && !agentOrSession.header
           ? sessions?.get?.(agentOrSession.id)
           : agentOrSession;
-      return session?.header?.agentPreset === config.presetId;
+      if (!session) return false;
+      // The session header stores the preset used at creation. A preset chosen
+      // before the first turn is committed as an `agent-preset/selected` event
+      // and is the effective composition; the header stays "standard". Always
+      // consult the committed selection first, with the header as a fast path.
+      if (session.header?.agentPreset === config.presetId) return true;
+      const presets = agentPresets || ctx.get?.('agentPresets');
+      try {
+        if (presets?.presetForSession?.(session) === config.presetId) return true;
+      } catch {
+        /* a session outside the registry contributes no preset */
+      }
+      try {
+        if (
+          agentOrSession?.ctx
+          && presets?.composedPreset?.(agentOrSession.ctx) === config.presetId
+        ) {
+          return true;
+        }
+      } catch {
+        /* composition may be unavailable during teardown */
+      }
+      return false;
     } catch {
       return false;
     }
@@ -352,6 +374,36 @@ export function apply(ctx, rawConfig) {
   } catch (error) {
     logger?.debug?.(`[bionic-memory] existing agent scan skipped: ${error?.message || error}`);
   }
+
+  // A preset can be selected on an already-created session before its first
+  // turn. The header still says "standard" in that case; the committed
+  // selection is the effective composition. Boot eagerly instead of waiting for
+  // the first tool call to discover it.
+  ctx.effect(() => {
+    if (typeof ctx.on !== 'function') return () => {};
+    const off = ctx.on('agent-preset/selected', (sessionId, agentPreset) => {
+      if (agentPreset !== config.presetId) return;
+      modeEngaged = true;
+      try {
+        const agent = ctx.agents.list().find((candidate) => String(candidate.id) === String(sessionId));
+        if (agent) registerAgentContext(agent);
+      } catch (error) {
+        logger?.debug?.(`[bionic-memory] preset-selected agent scan skipped: ${error?.message || error}`);
+      }
+      void getEngine()
+        .then((current) => {
+          if (!disposed && !stopScheduler) stopScheduler = startScheduler(current);
+        })
+        .catch((error) => logger?.warn?.(`[bionic-memory] boot after preset selection failed: ${error?.message || error}`));
+    });
+    return () => {
+      try {
+        off();
+      } catch {
+        /* already disposed */
+      }
+    };
+  }, 'bionic-memory: preset selection');
 
   // ------------------------------------- context metabolism pre-step interceptor
 
