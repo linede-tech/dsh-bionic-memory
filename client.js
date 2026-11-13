@@ -129,6 +129,12 @@ window.__ModuleLoader__.load({
       cacheAlert: '缓存告警',
       cacheBatch: '阶梯轮',
       cacheTokens: 'tokens',
+      voiceBank: '黄金语料库',
+      voiceBankCount: '已收录',
+      voiceBankTop: '每日注入',
+      voiceBankManual: '人工权重',
+      voiceBankEmpty: '还没有捕获到自然语感切片；用 /style save 亲自示范一条。',
+      voiceBankHint: '人工示范与用户正向反馈会进入这里，每晚 /dream 后取最高权重 5 条冻结进 Tier 1。',
     };
 
     const en = {
@@ -255,6 +261,12 @@ window.__ModuleLoader__.load({
       cacheAlert: 'Cache alert',
       cacheBatch: 'batch rounds',
       cacheTokens: 'tokens',
+      voiceBank: 'Golden voice bank',
+      voiceBankCount: 'collected',
+      voiceBankTop: 'daily top',
+      voiceBankManual: 'manual weight',
+      voiceBankEmpty: 'No natural-voice slices captured yet; teach one with /style save.',
+      voiceBankHint: 'Manual examples and positive feedback collect here; after each /dream the top five are frozen into Tier 1.',
     };
 
     const CSS = `
@@ -673,6 +685,50 @@ window.__ModuleLoader__.load({
                       `${t('cacheAlert')}：${data.meta_evolution.cache.alert.hint}`,
                     )
                   : null,
+              )
+            : h('div', { className: 'bionic-muted' }, t('noContextMetabolism')),
+        ),
+        h(
+          Card,
+          { label: t('voiceBank') },
+          data.style_bank
+            ? h(
+                'div',
+                null,
+                h(
+                  'div',
+                  { className: 'bionic-row', style: { flexWrap: 'wrap', gap: 4 } },
+                  h(
+                    'span',
+                    { className: 'bionic-chip' },
+                    `${t('voiceBankCount')} ${data.style_bank.count || 0}/${data.style_bank.max || 0}`,
+                  ),
+                  h(
+                    'span',
+                    { className: 'bionic-chip' },
+                    `${t('voiceBankTop')} ${data.style_bank.top_n || 5}`,
+                  ),
+                  h(
+                    'span',
+                    { className: 'bionic-chip' },
+                    `${t('voiceBankManual')} ${data.style_bank.manual_weight || 10}`,
+                  ),
+                ),
+                (data.style_bank.top || []).length
+                  ? h(
+                      'ul',
+                      { className: 'bionic-list' },
+                      (data.style_bank.top || []).slice(0, 3).map((entry) =>
+                        h(
+                          'li',
+                          { key: entry.id },
+                          h('span', { className: 'bionic-tag', style: { marginRight: 5 } }, `${entry.source} ${entry.weight}`),
+                          (entry.assistant || '').slice(0, 110),
+                        ),
+                      ),
+                    )
+                  : h('div', { className: 'bionic-muted' }, t('voiceBankEmpty')),
+                h('div', { className: 'bionic-muted', style: { marginTop: 5 } }, t('voiceBankHint')),
               )
             : h('div', { className: 'bionic-muted' }, t('noContextMetabolism')),
         ),

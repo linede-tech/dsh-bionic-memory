@@ -4,6 +4,7 @@ node_modules/
 .meta-evolver-*/
 .context-metabolism-*/
 .cache-prefix-*/
+.style-bank-*/
 *.db
 *.db-wal
 *.db-shm
@@ -13,6 +14,7 @@ meta-evolution.json
 context-metabolism.json
 handover.json
 daily-frozen-memory.json
+style_bank.json
 pending-apply.json
 proposals/
 snapshots/

@@ -33,7 +33,7 @@ const RULES = fs.readFileSync(path.join(PACKAGE_DIR, 'prompt-template.md'), 'utf
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.5.3';
+const BUILD = 'bionic-0.6.0';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -911,6 +911,86 @@ export function apply(ctx, rawConfig) {
           };
         } catch (error) {
           return { kind: 'error', text: `上下文代谢操作失败：${error?.message || error}` };
+        }
+      },
+    }),
+  );
+
+  commandDisposers.push(
+    ctx.commands.register({
+      name: 'style',
+      description: '自然语感黄金语料库：查看、保存和删除 Few-Shot 对话切片',
+      input: { hint: '<status | list | save [范例文本] | delete <id>>' },
+      handler: async (invocation) => {
+        if (!isActiveFor(invocation?.agent)) {
+          return { kind: 'error', text: '永续记忆模式专用指令：请切换到「永续记忆模式」后再使用。' };
+        }
+        let current;
+        try {
+          current = await getEngine();
+        } catch (error) {
+          return { kind: 'error', text: `记忆引擎不可用：${error?.message || error}` };
+        }
+        const bank = current.styleBank;
+        if (!bank) {
+          return { kind: 'error', text: '黄金语料库未启用（styleBankEnabled 为 false）。' };
+        }
+        const raw = String(invocation?.rawInput || '').trim();
+        const [head, ...tail] = raw.split(/\s+/);
+        const action = (head || 'status').toLowerCase();
+        const agent = invocation?.agent;
+        try {
+          if (action === 'status') {
+            const state = bank.state();
+            const lines = [
+              '【自然语感黄金语料库】',
+              `已收录 ${state.count}/${state.max} 条 · 每日冻结 Top ${state.top_n} · 人工示范权重 ${state.manual_weight}`,
+              `文件：${state.file}`,
+              state.top.length ? '当前最高权重：' : '还是空的。',
+              ...state.top.map(
+                (entry, index) =>
+                  `${index + 1}. [${entry.id}] ${entry.source} · 权重 ${entry.weight} · 命中 ${entry.hits}\n   用户：${entry.user}\n   回应：${entry.assistant}`,
+              ),
+            ];
+            return { kind: 'success', text: commandText(lines) };
+          }
+          if (action === 'list') {
+            const entries = bank.all().slice(0, 20);
+            if (!entries.length) return { kind: 'success', text: '语料库还是空的。' };
+            const lines = entries.map(
+              (entry, index) =>
+                `${index + 1}. [${entry.id}] ${entry.source} · 权重 ${entry.weight} · ${new Date(entry.last_seen).toISOString().slice(0, 10)}\n   用户：${entry.user.slice(0, 80)}\n   回应：${entry.assistant.slice(0, 120)}`,
+            );
+            return { kind: 'success', text: commandText(['【黄金语料 Top 20】', ...lines]) };
+          }
+          if (action === 'save') {
+            const text = tail.join(' ').trim();
+            const result = current.saveStyleExample({
+              session_id: String(agent?.id || ''),
+              assistant_text: text,
+            });
+            if (!result.ok) return { kind: 'error', text: `保存失败：${result.error}` };
+            const entry = result.entry;
+            return {
+              kind: 'success',
+              text: commandText([
+                `已写入黄金语料库：${entry.id}（人工示范，权重 ${entry.weight}）。`,
+                '我会在今晚 `/dream` 编译每日冻结记忆时，把最高权重的切片放进 Tier 1 前缀，明天开始模仿。',
+              ]),
+            };
+          }
+          if (action === 'delete') {
+            const result = bank.remove(tail.join(' ').trim());
+            return result.ok
+              ? { kind: 'success', text: `已删除语料 ${result.entry.id}。` }
+              : { kind: 'error', text: result.error || '删除失败' };
+          }
+          return {
+            kind: 'error',
+            text: '用法：`/style status`、`/style list`、`/style save [范例文本]`、`/style delete <id>`。',
+          };
+        } catch (error) {
+          return { kind: 'error', text: `语料库操作失败：${error?.message || error}` };
         }
       },
     }),

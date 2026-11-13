@@ -141,6 +141,60 @@
 - 受 Harness 约束：`llm/stream` 的 LOOP 请求是冻结的，本插件只能通过 durable surface 与尾部合成消息改变模型可见内容，不能原地改写请求；旧尾部快照无法从历史中删除，只能保持静态并在阶梯折叠时归档。
 - 若标准 preset 或你 profile 里其他组合仍启用了 80% 自动 compaction 或 8192 字符 tool-result pruner，它们可能在 82% 之前改写历史；本插件无法关闭其他组合，只负责自己的 82% 锯齿波和缓存告警。本模式 preset 已经关闭这些自动改写。
 
+## Few-Shot 自然语感锚点与黄金语料库（0.6.0）
+
+模型回复的“AI 机械感”不能只靠一句“请自然一点”解决。0.6.0 把语感拆成**静态正反例**与**动态自学习语料**两层，分别放进 Tier 0 与 Tier 1。
+
+### Tier 0 · 正反例语感对齐
+
+`prompt-template.md` 内新增 `<style_imitation_and_voice_rules>`：
+
+- 三条铁律：禁止客服腔/说教感；短句、口语碎词、破折号/省略号呼吸感；记忆融进话里，不许邀功说“根据记忆库显示”。
+- 三组真实场景的 ❌ 生硬 AI 味 vs ✅ 自然活人感对比：褪色记忆被习惯调侃、话到嘴边卡壳与被纠正后的“一拍脑袋”、晨起梦境余韵 + 把工作派给 ZCode/WorkBuddy。
+- 紧随其后的 `<hard_style_constraints>`：日常对话严禁 `1. 2. 3.` 列表、加粗小标题，以及“首先/其次/总而言之/总的来说/有什么帮您/我理解你的感受”等播音与客服词汇。展示代码、配置或长文档时除外。
+
+这块是绝对静态的 Tier 0，不含时间、会话 id 或任何每轮变量，跨会话共享同一份 KV 前缀。
+
+### Tier 1 · 黄金语料库 `style_bank.json`
+
+位置：`.dsh/bionic-memory/style_bank.json`。每条记录是真实 `User -> Assistant` 对话切片：
+
+```json
+{
+  "id": "sty-a1b2c3d4",
+  "user": "今天改了一天底层接口，累死我了……",
+  "assistant": "不是吧，这都几点了还炫烧烤？……",
+  "weight": 3,
+  "source": "feedback",
+  "session_id": "...",
+  "turn": 42,
+  "created_at": 0,
+  "last_seen": 0,
+  "hits": 2
+}
+```
+
+**自动捕获**
+
+- 当用户回复出现“哈哈/笑死/太懂我/就是这样/太可爱/绝了”等强正向反馈，或当前话语是 ≥ 40 字且带“然后/而且/对了/话说/继续”的高密度延续时，引擎把**上一轮**真正被称赞的 `User -> Assistant` 对话对写入语料库。
+- 正向反馈权重默认 `3`，普通高密度延续 `1.5`；命中重复只累加权重与 `hits`，不会产生重复条目。
+
+**人工调教**
+
+- 直接说“你应该这么说：xxx”“你这么说：xxx”或“示范一下：xxx”时，引擎自动把 `xxx` 以最高权重 `10` 写入，用户上下文取上一轮用户话。
+- `/style save` 保存上一轮真实对话为人工示范；`/style save <文本>` 把指定文本作为最高权重范例。
+- `/style status` / `/style list` 查看；`/style delete <id>` 删除。
+
+**每日冻结注入**
+
+`/dream` 结束编译 Tier 1 时，从 `style_bank.json` 取权重最高的 5 组，封装成 `<learned_natural_voice_examples>` 静态块写进 `daily-frozen-memory.json`。块内是 `source/weight/user/assistant`，不含时间戳，白天字节稳定，走 KV Cache；模型每天模仿自己过去最自然、最受用户喜欢的说话方式。人工示范权重最高，因此会优先进入每天的 5 组。
+
+**边界**
+
+- 语料库是本地个人记忆，默认被 `.gitignore` 排除；不会上传 GitHub。
+- 只有自然语言长回复会被收录；包含代码块或以 `import/export/function/class/const` 开头的技术回复会被跳过，避免把代码风格当成说话风格。
+- 当天的 `/dream` 之前新增的语料要等到下一次编译才会进入 Tier 1；不会每轮改写静态前缀。
+
 ## [0.4.x 历史] 呼吸式上下文代谢与过载保护（Context Metabolism Engine）
 
 新增 [`lib/context-metabolism.js`](lib/context-metabolism.js)。Agent Loop 的 `llm/stream` 请求是冻结的只读对象，所以这层不篡改请求，而是在 **`agent/pre-step` waterfall** 里按 `tokenMeter.contextPressure(session)` 的水位改写当前会话的 **durable surface**（追加带 `surfaceOp: replace` 的压缩节点），再通过循环的请求重建让模型看到压缩后的历史。所有原文仍留在会话日志与本地归档，只有“当前模型看到的工作集”被代谢。
@@ -247,8 +301,9 @@ R(t) = exp(-(now - t_last) / (S_0 · E · (1 + 0.3 · k)))
 | `/forget <faded\|habits\|skills\|记忆ID>` | 主动遗忘；`/forget all confirm` 才会清空全部 |
 | `/evolve status\|trigger\|rollback\|approve [id]` | 元认知进化：查看遥测/参数、强制反思、回退、审批代码提案 |
 | `/context status\|resolve <id\|文字>\|pin <文字>` | 呼吸代谢：查看水位/脱水/折叠、解钉或手动图钉未完成话题 |
+| `/style status\|list\|save [范例文本]\|delete <id>` | 自然语感黄金语料库：查看权重 Top、保存人工示范、删除语料 |
 | 工具 `bionic_memory` | 仅永续记忆模式可用：`status` / `recall` / `remember` / `dream` / `forget` / `resolve_curiosity` / `confirm` / `last_dream`；`remember` 可带 `source_type: user_stated \| agent_inferred`；`preset_health` / `preset_status` 是全局诊断动作 |
-| 监视器 | 潜意识 / 情景 / 习惯 / 本能 / 梦境 / 图谱 / 上下文 七个页签；含来源标签、归档本能、并行窗口 |
+| 监视器 | 潜意识 / 情景 / 习惯 / 本能 / 梦境 / 图谱 / 上下文 七个页签；含来源标签、归档本能、并行窗口、黄金语料库与缓存省钱卡片 |
 
 ## 配置（`cordis.patch.yml` 的 `bionic-memory` 行）
 
@@ -257,7 +312,7 @@ R(t) = exp(-(now - t_last) / (S_0 · E · (1 + 0.3 · k)))
 | `activation` | `preset` | `all` 注入所有会话（旧行为）；`preset` 只注入 `presetId` 会话 |
 | `presetId` | `bionic-memory` | 受限模式对应的 preset id |
 | `observeAllSessions` | `false` | 是否记录所有会话的轨迹；`false` 时只记录 preset 会话 |
-| `dataDir` | 空 | 空则用「当前活跃会话工作目录/.dsh/bionic-memory」；本安装行已固定为当前工作区路径，避免重启时在 profile 目录生成空库 |
+| `dataDir` | 空 | 空则用「当前活跃会话工作目录/.dsh/bionic-memory」；仓库默认不再固定绝对路径，便于跨机器克隆 |
 | `dreamHour` | `4` | 每日做梦小时（本地时区） |
 | `dreamIntervalHours` | `18` | 启动补梦的最小间隔 |
 | `dreamTemperature` | `1.25` | REM 采样温度 |
@@ -271,6 +326,12 @@ R(t) = exp(-(now - t_last) / (S_0 · E · (1 + 0.3 · k)))
 | `batchCollapseFallback` | `true` | 模型批处理漏掉的相似簇是否仍确定性折叠 |
 | `fadeThreshold` / `clearThreshold` | `0.3` / `0.7` | 记忆分辨率分界 |
 | `maxSkills` | `20` | 注入 System Prompt 的本能上限 |
+| `styleBankEnabled` | `true` | 是否启用黄金语料库与人工示范 |
+| `styleBankTop` | `5` | 每日 Tier 1 冻结的语料条数 |
+| `styleBankManualWeight` | `10` | 人工示范/直接教导的最高权重 |
+| `styleBankFeedbackWeight` | `3` | 强正向反馈自动捕获权重 |
+| `styleBankContinuationWeight` | `1.5` | 高密度延续自动捕获权重 |
+| `styleBankMax` / `styleBankMaxChars` | `200` / `1200` | 语料库容量与单条长度上限 |
 | `skillMergeSimilarity` | `0.75` | NREM 本能合并阈值 |
 | `skillTriggerSimilarity` | `0.3` | 当前查询与本能规则的相关度阈值（命中才刷新 last_used） |
 | `skillIdleDays` | `30` | 超过该天数未触发则归档 |
@@ -336,6 +397,7 @@ node test/fallibility-smoke.mjs # 失真四算子、免疫红线、shadow truth�
 node test/meta-evolver-smoke.mjs # 遥测、Tier 1/2/3、Git 快照、试用回滚、提案审批与噩梦
 node test/context-metabolism-smoke.mjs # 0.82 锯齿波、归档、图钉、余温接力与历史入库
 node test/cache-prefix-smoke.mjs # 四阶前缀、每日冻结块、尾部闪回、Tier hash、缓存遥测与告警
+node test/style-bank-smoke.mjs # Tier 0 语感正反例、反馈/延续/人工示范捕获、Top5 与每日冻结块
 node test/client-smoke.mjs   # Client 工厂、locale 字典、shell.overlay 注册（stub React/Cordis）
 node test/session-inspect.mjs <session.v4.jsonl.zstd>   # 从会话日志确认注入
 node test/db-inspect.mjs <memory.db>                    # 只读查看 SQLite 表
