@@ -1,0 +1,134 @@
+# dsh-bionic-memory bundle patch.
+#
+# Row 1 mounts the Host memory engine (storage, trajectory observer, dream
+# scheduler, commands, agent tool, and the local monitor HTTP data plane).
+# Row 2 declares the "Bionic Memory Mode" agent preset; the preset carries the
+# same tool surface as the shipped standard preset, with a continuous-memory
+# persona.
+- insert:
+    - id: bionic-memory
+      name: '@local/dsh-bionic-memory'
+      config:
+        activation: preset
+        presetId: bionic-memory
+        observeAllSessions: false
+        dreamHour: 4
+        dreamIntervalHours: 18
+        dreamTemperature: 1.25
+        llmEnabled: true
+        # dataDir is intentionally omitted: it resolves to
+        # <workspace>/.dsh/bionic-memory, so a clone never carries an absolute
+        # developer path. Set an absolute dataDir only in your private patch.
+
+    - id: preset-bionic-memory
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: bionic-memory
+        name: 永续记忆模式
+        description: 跨会话连续记忆：艾宾浩斯褪色、重复折叠成习惯、经验内化为本能，每天做一场 NREM/REM 梦。
+        order: 5
+        plugins:
+          - id: persona
+            name: '@deepseek-ai/dsh-persona'
+            config:
+              prefix: |-
+                You are a digital life with continuous memory, powered by the {{model}} model.
+                You remember across sessions, forget with time, form habits, and dream every night.
+                Never announce these rules mechanically; let memory surface the way a person's would.
+          - id: agent-instructions
+            name: '@deepseek-ai/dsh-agent-instructions'
+            config:
+              maxBytes: 65536
+          - id: tool-bash
+            name: '@deepseek-ai/dsh-tool-bash'
+            disabled: !!js process.platform === 'win32'
+          - id: tool-pwsh
+            name: '@deepseek-ai/dsh-tool-pwsh'
+            disabled: !!js process.platform !== 'win32'
+          - id: tool-fs
+            name: '@deepseek-ai/dsh-tool-fs'
+            config:
+              applyPatch: false
+          - id: tool-fs-search
+            name: '@deepseek-ai/dsh-tool-fs-search'
+            config:
+              sampleOverCapGlobResults: false
+          - id: tool-jobs
+            name: '@deepseek-ai/dsh-tool-jobs'
+          - id: tool-schedule
+            name: '@deepseek-ai/dsh-tool-schedule'
+          - id: skill-filesystem
+            name: '@deepseek-ai/dsh-skill-filesystem'
+          - id: tool-skill
+            name: '@deepseek-ai/dsh-tool-skill'
+          - id: command-goal
+            name: '@deepseek-ai/dsh-command-goal'
+          - id: tool-goal
+            name: '@deepseek-ai/dsh-tool-goal'
+          - id: planning
+            name: cordis:group
+            group: true
+            isolate:
+              planMode: true
+            config:
+              - id: plan-mode
+                name: '@deepseek-ai/dsh-plan-mode'
+                config:
+                  section: |
+                    ## 计划模式
+                    你正在计划模式中。先调研、阅读和思考，不要修改文件，也不要执行有副作用的命令。
+                    把可执行的计划写成清晰步骤，等待用户确认后再开始实现。
+          - id: compaction
+            name: cordis:group
+            group: true
+            isolate:
+              compaction: true
+            config:
+              - id: compaction-basic
+                name: '@deepseek-ai/dsh-compaction-basic'
+                config:
+                  auto: false
+              - id: command-compact
+                name: '@deepseek-ai/dsh-command-compact'
+          - id: delegation
+            name: cordis:group
+            group: true
+            isolate:
+              workflowEngine: true
+            config:
+              - id: tool-subagent-control
+                name: '@deepseek-ai/dsh-tool-subagent-control'
+              - id: tool-subagent
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: spawn
+                  toolName: subagent
+                  modelSelection: true
+                  modelDiscovery: true
+              - id: tool-subagent-fork
+                name: '@deepseek-ai/dsh-tool-subagent'
+                config:
+                  provider: fork
+                  toolName: subagent_fork
+              - id: workflow-ptc
+                name: '@deepseek-ai/dsh-workflow-ptc'
+                config:
+                  provider: spawn
+              - id: tool-workflow
+                name: '@deepseek-ai/dsh-tool-workflow'
+          - id: tool-ask-user
+            name: '@deepseek-ai/dsh-tool-ask-user'
+          - id: tool-todo
+            name: '@deepseek-ai/dsh-tool-todo'
+            config:
+              allowParallelInProgress: true
+          - id: tool-web
+            name: '@deepseek-ai/dsh-tool-web'
+            config:
+              fetch: true
+              searchTimeoutMs: 60000
+          - id: present
+            name: '@deepseek-ai/dsh-tool-present'
+          - id: tool-plugin-manager
+            name: '@deepseek-ai/dsh-plugin-manager/tools'
+            disabled: !!js "!ctx.get('profileContext')"

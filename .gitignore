@@ -1,0 +1,23 @@
+# Runtime memory / caches
+node_modules/
+.dsh/
+.meta-evolver-*/
+.context-metabolism-*/
+.cache-prefix-*/
+*.db
+*.db-wal
+*.db-shm
+telemetry.json
+config.json
+meta-evolution.json
+context-metabolism.json
+handover.json
+daily-frozen-memory.json
+pending-apply.json
+proposals/
+snapshots/
+context-archive/
+*.log
+.env
+.DS_Store
+Thumbs.db

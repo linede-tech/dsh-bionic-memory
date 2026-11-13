@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="Bionic memory">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1b2350"/>
+      <stop offset="1" stop-color="#0a7f8c"/>
+    </linearGradient>
+    <linearGradient id="spiral" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#9ff3ff"/>
+      <stop offset="1" stop-color="#7cc4ff"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#bg)"/>
+  <g fill="none" stroke="url(#spiral)" stroke-linecap="round">
+    <path d="M32 47c-9 0-16-6.3-16-14.2C16 24 22.6 18 31 18c7 0 12.4 4.7 12.4 10.8 0 5.4-4.4 9.4-10 9.4-4.6 0-8.2-3-8.2-6.9 0-3.6 2.9-6.3 6.6-6.3 2.9 0 5.2 1.9 5.2 4.3" stroke-width="3.4"/>
+  </g>
+  <circle cx="44.5" cy="21" r="3.1" fill="#ffd479"/>
+  <circle cx="19" cy="42" r="2.4" fill="#7cffc4"/>
+  <circle cx="40" cy="49" r="2" fill="#ff9ad5"/>
+  <path d="M41.7 23.4 35.4 28.2M21.2 40.4 27.6 36.6M38.6 47.4 36.4 42.6" stroke="#dfe9ff" stroke-width="1.2" stroke-linecap="round" opacity=".7"/>
+</svg>
