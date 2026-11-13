@@ -6,6 +6,7 @@ node_modules/
 .cache-prefix-*/
 .style-bank-*/
 .voice-engine-*/
+.bridge-*/
 *.db
 *.db-wal
 *.db-shm

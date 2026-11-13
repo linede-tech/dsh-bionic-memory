@@ -41,7 +41,7 @@ let RULES = RULES_SOURCE;
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.8.1';
+const BUILD = 'bionic-0.8.2';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);

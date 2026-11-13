@@ -40,8 +40,9 @@
   soul/dreams/YYYY-MM-DD.md
   cache_blocks/tier0_static_dna.md
   cache_blocks/tier1_daily_frozen.md
-  orchestrator/zcode_briefing.md
-  orchestrator/workbuddy_briefing.md
+  orchestrator/agents.json
+  orchestrator/briefings/<agent-id>.md
+  orchestrator/README.md
   evolution_lab/
 ```
 
@@ -66,8 +67,9 @@
 │   ├── tier0_static_dna.md
 │   └── tier1_daily_frozen.md
 ├── orchestrator/                  外脑交换信标
-│   ├── zcode_briefing.md
-│   └── workbuddy_briefing.md
+│   ├── agents.json                外部 agent 注册表（可增删）
+│   ├── README.md                  桥梁契约
+│   └── briefings/<agent-id>.md    每个外部 agent 的脱敏简报
 └── evolution_lab/                 元认知进化的遥测、提案与快照
 ```
 
@@ -98,11 +100,23 @@
 
 白天所有会话组装系统前缀时直接读取这两个文件，不在内存里重新拼接动态字符串，物理层面保证跨会话、跨窗口的字节一致。
 
-### 外脑信标
+### 外脑信标：通用外部 agent 桥
 
-`orchestrator/zcode_briefing.md` 汇总脱敏后的研发本能、代码习惯与历史 Bug 锚点；`workbuddy_briefing.md` 汇总文档审美、办公习惯与语感偏好。每次入库、每场梦后自动刷新。调用外部 ZCode / WorkBuddy 时，直接挂载这两个固定路径即可。
+`orchestrator/agents.json` 是**外部 agent 注册表**，不是固定 ZCode/WorkBuddy。它默认带两个示例条目，你可以删除、替换或添加任意 agent：
 
-> 本仓库是 `dsh-bionic-memory`。当前工作区与 profile 里没有找到 `dsh-agent-orchestrator` 源码；它的所有持久化应指向同一个 `~/.dsh/bionic-soul/orchestrator/`。如果它安装在别的路径，需要把该路径的插件源码给我，才能一起改它的写入逻辑。
+```json
+{
+  "id": "my-agent",
+  "name": "My Agent",
+  "description": "它负责什么",
+  "keywords": ["接口", "bug", "部署"],
+  "briefing": "briefings/my-agent.md"
+}
+```
+
+引擎每次入库、每场梦后，按每个 agent 的 `keywords` 从本能、习惯、印象、语感中筛出相关内容，重写 `briefing` 指向的脱敏简报。外部 orchestrator 只需要读 `agents.json`，按 `id` 挂载对应简报，不应假设 `zcode` 或 `workbuddy` 一定存在。`orchestrator/README.md` 写明了这个契约。
+
+> 当前 profile/工作区没有 `dsh-agent-orchestrator` 源码；通用桥梁文件已就绪。如果它安装在别的路径，把源码给我，才能让它按 `agents.json` 动态读取而不是写死 agent 名。
 
 ### Git 守护与迁移
 
@@ -499,6 +513,7 @@ node test/meta-evolver-smoke.mjs # 遥测、Tier 1/2/3、Git 快照、试用回�
 node test/context-metabolism-smoke.mjs # 0.82 锯齿波、归档、图钉、余温接力与历史入库
 node test/cache-prefix-smoke.mjs # 四阶前缀、每日冻结块、尾部闪回、Tier hash、缓存遥测与告警
 node test/voice-engine-smoke.mjs # 语言镜像、传染词、熟稔度、睡眠反刍、Tier 1 语感档案
+node test/bridge-smoke.mjs   # agents.json 通用外部 agent 桥、任意 id、按关键词生成简报
 node test/client-smoke.mjs   # Client 工厂、locale 字典、shell.overlay 注册（stub React/Cordis）
 node test/session-inspect.mjs <session.v4.jsonl.zstd>   # 从会话日志确认注入
 node test/db-inspect.mjs <memory.db>                    # 只读查看 SQLite 表
