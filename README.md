@@ -52,6 +52,8 @@
 
 ## 全局双模态大脑（0.8.x）
 
+> 首次安装、旧数据迁移、重置与验证的完整步骤见 [docs/INITIALIZATION.md](docs/INITIALIZATION.md)。
+
 所有工作区、所有「永续记忆模式」会话共享一个根目录：
 
 ```text
