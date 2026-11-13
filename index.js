@@ -20,6 +20,13 @@ import { normalizeConfig } from './lib/config.js';
 import { BionicMemoryEngine } from './lib/engine.js';
 import { createLlmHost } from './lib/llm.js';
 import { openStore } from './lib/store.js';
+import {
+  SOUL_ROOT,
+  ensureSoul,
+  migrateLegacy,
+  readTier0,
+  soulPaths,
+} from './lib/soul-storage.js';
 import { textOfContent } from './lib/text.js';
 import { registerWebRoutes } from './lib/web.js';
 
@@ -28,12 +35,13 @@ export const name = '@local/dsh-bionic-memory';
 export const inject = ['agents', 'agentPresets', 'commands', 'sessions', 'systemPrompt', 'timer', 'tools', 'webServer'];
 
 const PACKAGE_DIR = path.dirname(fileURLToPath(import.meta.url));
-const RULES = fs.readFileSync(path.join(PACKAGE_DIR, 'prompt-template.md'), 'utf8').trim();
+const RULES_SOURCE = fs.readFileSync(path.join(PACKAGE_DIR, 'prompt-template.md'), 'utf8').trim();
+let RULES = RULES_SOURCE;
 
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.7.2';
+const BUILD = 'bionic-0.8.1';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -41,6 +49,17 @@ export function apply(ctx, rawConfig) {
   const sessions = ctx.get('sessions');
   const agentPresets = ctx.get('agentPresets');
   const pluginManager = ctx.get('pluginManager');
+
+  // The global soul is the single source of truth for every workspace. The
+  // physical Tier 0 file is the byte source for the system prompt.
+  try {
+    const soulRoot = resolveDataDir();
+    ensureSoul({ root: soulRoot, tier0Source: RULES_SOURCE, logger });
+    RULES = readTier0(soulRoot) || RULES_SOURCE;
+    logger?.info?.(`[bionic-memory] global soul at ${soulRoot}`);
+  } catch (error) {
+    logger?.warn?.(`[bionic-memory] global soul init failed: ${error?.message || error}`);
+  }
   const tokenMeter = ctx.get('tokenMeter');
   const llmRuntime = ctx.get('llm');
 
@@ -145,10 +164,7 @@ export function apply(ctx, rawConfig) {
       const base = baseDirectory();
       return path.isAbsolute(explicit) ? explicit : path.join(base, explicit);
     }
-    const pointer = readDataDirPointer();
-    if (pointer) return pointer;
-    const base = baseDirectory();
-    return path.join(base, '.dsh', 'bionic-memory');
+    return SOUL_ROOT;
   }
 
   // -------------------------------------------------------- preset diagnostics
@@ -225,7 +241,22 @@ export function apply(ctx, rawConfig) {
     if (bootPromise) return bootPromise;
     bootPromise = (async () => {
       const dataDir = resolveDataDir();
-      const store = await openStore({ dir: dataDir, logger });
+      const paths = ensureSoul({ root: dataDir, tier0Source: RULES_SOURCE, logger });
+      const legacyDir = readDataDirPointer();
+      if (legacyDir && path.resolve(legacyDir) !== path.resolve(dataDir)) {
+        try {
+          const migrated = await migrateLegacy({ root: dataDir, legacyDir, logger });
+          if (migrated.migrated) logger?.info?.(`[bionic-memory] migrated legacy memory from ${legacyDir}`);
+        } catch (error) {
+          logger?.warn?.(`[bionic-memory] legacy migration failed: ${error?.message || error}`);
+        }
+      }
+      const store = await openStore({
+        dir: paths.cortex,
+        dbFile: 'memory_cortex.sqlite',
+        jsonFile: 'memory_cortex.json',
+        logger,
+      });
       const created = new BionicMemoryEngine({
         store,
         config,
@@ -234,7 +265,7 @@ export function apply(ctx, rawConfig) {
         sessions,
         dataDir,
         packageDir: PACKAGE_DIR,
-        basePrompt: RULES,
+        basePrompt: readTier0(dataDir) || RULES,
         pluginReload: reloadPlugin,
         tokenMeter,
         llmRuntime,
@@ -242,7 +273,7 @@ export function apply(ctx, rawConfig) {
       created.init();
       engine = created;
       logger?.info?.(
-        `[bionic-memory] engine ready (${store.kind}) at ${dataDir}; activation=${config.activation}`,
+        `[bionic-memory] engine ready (${store.kind}) at ${dataDir} (cortex ${paths.dbFile}); activation=${config.activation}`,
       );
       if (!disposed && modeEngaged) stopScheduler = startScheduler(created);
       return created;
@@ -587,6 +618,11 @@ export function apply(ctx, rawConfig) {
         logger?.debug?.(`[bionic-memory] episode ${result.episode_id} stored from ${id}`);
       } else if (result?.habituated) {
         logger?.debug?.(`[bionic-memory] repeat folded into habit ${result.schema_id}`);
+      }
+      try {
+        current.refreshSoulArtifacts();
+      } catch (error) {
+        logger?.warn?.(`[bionic-memory] soul refresh after ingest failed: ${error?.message || error}`);
       }
       return result;
     } catch (error) {

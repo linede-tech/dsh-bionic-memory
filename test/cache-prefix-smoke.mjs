@@ -174,8 +174,9 @@ async function main() {
   check(dailyOne.includes('<daily_frozen_memory>'), 'daily frozen block compiled');
   check(!dailyOne.includes('2026-11-13'), 'daily frozen block has no daily timestamp inside it');
   check(engine.dailyFrozenBlock() === dailyOne, 'daily frozen block is byte-identical across reads');
-  const dailyFile = path.join(DATA, 'daily-frozen-memory.json');
+  const dailyFile = engine.dailyFrozenFile;
   check(fs.existsSync(dailyFile), 'daily frozen block persisted');
+  check(dailyFile.includes('tier1_daily_frozen.md'), 'daily block lives in cache_blocks/tier1_daily_frozen.md');
   engine.insertSkill('先复述用户需求，再给结论', 0.82);
   engine.compileDailyFrozenMemory({ reason: 'test' });
   const dailyTwo = engine.dailyFrozenBlock();

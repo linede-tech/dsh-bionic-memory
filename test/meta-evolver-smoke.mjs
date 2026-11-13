@@ -199,7 +199,7 @@ async function main() {
   check(meta.config.similarityThreshold > 0, 'retrieval similarity threshold tightened', meta.config.similarityThreshold);
   check(meta.config.contextCharBudget < 3000, 'context budget tightened', meta.config.contextCharBudget);
   check(fs.existsSync(meta.configFile), 'config.json written');
-  check(fs.existsSync(path.join(dataDir, '.git')), 'git snapshot repo created');
+  check(fs.existsSync(path.join(meta.dataDir, '.git')), 'git snapshot repo created in evolution_lab');
   check(Boolean(t1Trial?.snapshot?.git), 'Tier 1 recorded a git snapshot', t1Trial?.snapshot);
 
   // A worsened trial: two friction turns within the 3-day window.

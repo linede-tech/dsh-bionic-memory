@@ -29,18 +29,84 @@
 
 ### 数据目录稳定性（重要）
 
-`dataDir` 为空时，引擎按「最近活跃会话的工作目录 → `workingDirectory.defaultDirectory` → 进程 cwd」解析。如果 DSH 重启后先加载监视器、恢复出会话之前就 boot 了引擎，可能落到 profile 目录（例如 `<profile>/.dsh/bionic-memory`），看起来像记忆被清空；旧数据通常仍在原 workspace 的 `.dsh/bionic-memory`。
+0.8.x 默认使用全局双模态大脑：
 
-任选一种方式固定数据目录：
-
-- 在本地 `cordis.patch.yml` 给 `bionic-memory` 行配置绝对 `dataDir`（不要把个人路径提交到公开仓库）；
-- 或放置一个 profile-local 指针文件 `<profile>/.dsh/bionic-memory-location.json`：
-
-```json
-{ "dataDir": "C:\\Users\\you\\Documents\\deepseek-harness\\default-workspace\\.dsh\\bionic-memory" }
+```text
+~/.dsh/bionic-soul/
+  cortex/memory_cortex.sqlite
+  soul/scratchpad.json
+  soul/emergent_voice.json
+  soul/procedural_skills.md
+  soul/dreams/YYYY-MM-DD.md
+  cache_blocks/tier0_static_dna.md
+  cache_blocks/tier1_daily_frozen.md
+  orchestrator/zcode_briefing.md
+  orchestrator/workbuddy_briefing.md
+  evolution_lab/
 ```
 
-插件每次 boot 会优先读取，其次才回退到会话目录。也支持环境变量 `BIONIC_MEMORY_DATA_DIR`。该指针不属于仓库内容。
+无论 DSH 在哪个工作区启动、新建多少会话，只要进入「永续记忆模式」都连接这个全局目录。旧版 workspace-local 数据会在首次 boot 时一次性迁移进全局目录；旧目录不会删除。
+
+如需自定义位置，可在本地 `cordis.patch.yml` 给 `bionic-memory` 行配置绝对 `dataDir`，或保留 profile-local 指针 `<profile>/.dsh/bionic-memory-location.json` 作为迁移来源。指针不再决定日常运行目录，只用于一次性迁移。
+
+## 全局双模态大脑（0.8.x）
+
+所有工作区、所有「永续记忆模式」会话共享一个根目录：
+
+```text
+~/.dsh/bionic-soul/
+├── cortex/                        左脑：SQLite 高并发检索引擎
+│   └── memory_cortex.sqlite
+├── soul/                          右脑：明文记忆
+│   ├── scratchpad.json            Layer 1 潜意识白板
+│   ├── emergent_voice.json        自然语感养成档案
+│   ├── procedural_skills.md       Layer 4 核心本能
+│   └── dreams/YYYY-MM-DD.md       每日梦境日记
+├── cache_blocks/                  KV Cache 物理前缀
+│   ├── tier0_static_dna.md
+│   └── tier1_daily_frozen.md
+├── orchestrator/                  外脑交换信标
+│   ├── zcode_briefing.md
+│   └── workbuddy_briefing.md
+└── evolution_lab/                 元认知进化的遥测、提案与快照
+```
+
+### 左脑：SQLite
+
+`cortex/memory_cortex.sqlite` 使用：
+
+- `PRAGMA journal_mode = WAL;`
+- `PRAGMA busy_timeout = 5000;`
+- `synchronous = NORMAL`
+
+三张公开核心表：
+
+- `episodic_memories`：`level_0_raw` / `level_1_summary` / `level_2_impression`、`embedding`、`s_0` / `e` / `n` / `k` / `t_last`；
+- `compressed_schemas`：习惯规律、`occurrence_count`、`exception_anchors` JSON；
+- `memory_edges`：情感关联与防混淆锚点。
+
+内部兼容表仍由引擎写入，触发器把每次 INSERT/UPDATE/DELETE 镜像到三张核心表；升级不会破坏旧库。多窗口并发读写与后台梦境线程共用 WAL，不锁表。
+
+### 右脑：明文与物理缓存
+
+- 每轮对话把 Layer 1 白板同步到 `soul/scratchpad.json`；
+- 语感引擎写入 `soul/emergent_voice.json`；
+- 本能变化后重写 `soul/procedural_skills.md`；
+- 每场梦追加到 `soul/dreams/YYYY-MM-DD.md`；
+- `/dream` 编译 Tier 1 时**直接写入** `cache_blocks/tier1_daily_frozen.md`；
+- Tier 0 的 `cache_blocks/tier0_static_dna.md` 在首次初始化时从插件 prompt 物理落盘，之后系统提示直接按字节读取。
+
+白天所有会话组装系统前缀时直接读取这两个文件，不在内存里重新拼接动态字符串，物理层面保证跨会话、跨窗口的字节一致。
+
+### 外脑信标
+
+`orchestrator/zcode_briefing.md` 汇总脱敏后的研发本能、代码习惯与历史 Bug 锚点；`workbuddy_briefing.md` 汇总文档审美、办公习惯与语感偏好。每次入库、每场梦后自动刷新。调用外部 ZCode / WorkBuddy 时，直接挂载这两个固定路径即可。
+
+> 本仓库是 `dsh-bionic-memory`。当前工作区与 profile 里没有找到 `dsh-agent-orchestrator` 源码；它的所有持久化应指向同一个 `~/.dsh/bionic-soul/orchestrator/`。如果它安装在别的路径，需要把该路径的插件源码给我，才能一起改它的写入逻辑。
+
+### Git 守护与迁移
+
+`~/.dsh/bionic-soul/` 自动 `git init` 并建立初始 commit；`evolution_lab/` 保留元认知快照与提案。旧 workspace-local `.dsh/bionic-memory` 会在首次 boot 时复制进全局目录（DB 用 SQLite `VACUUM INTO`，旧目录只作冷备份），迁移后写入 `.migrated-from` 标记，避免重复。
 
 ## 四层记忆
 

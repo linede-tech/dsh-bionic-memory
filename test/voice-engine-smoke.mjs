@@ -86,7 +86,10 @@ async function main() {
   engine.init();
   const voice = engine.voiceEngine;
   check(Boolean(voice), 'voice engine attached to the engine');
-  check(fs.existsSync(path.join(DATA, 'user_linguistics.json')), 'user_linguistics.json created');
+  check(
+    fs.existsSync(path.join(DATA, 'soul', 'emergent_voice.json')),
+    'soul/emergent_voice.json created',
+  );
   check(engine.state('s1').voice_engine?.familiarity?.score === 0, 'familiarity starts at zero');
 
   let turn = 0;
@@ -188,7 +191,12 @@ async function main() {
   check(!daily.includes('<learned_natural_voice_examples>'), 'daily block no longer injects canned examples');
   check(engine.dailyFrozenBlock() === daily, 'daily profile becomes the Tier 1 section text');
 
-  const reloaded = new VoiceEngine({ dataDir: DATA, config, clock });
+  const reloaded = new VoiceEngine({
+    dataDir: path.join(DATA, 'soul'),
+    file: path.join(DATA, 'soul', 'emergent_voice.json'),
+    config,
+    clock,
+  });
   reloaded.init();
   check(reloaded.state.turns === voice.state.turns, 'linguistics survive reload');
   check(reloaded.state.self_discovered_voice_notes.length === 2, 'voice notes survive reload');
