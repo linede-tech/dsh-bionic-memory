@@ -69,11 +69,11 @@ C:\Users\unity\.dsh\bionic-soul\
 - 复制旧 `daily-frozen-memory.json` 的 block → `cache_blocks/tier1_daily_frozen.md`；
 - 复制旧 `telemetry.json` / `meta-evolution.json` → `evolution_lab/`；
 - 复制旧 `proposals` / `snapshots` / `context-archive`；
-- 写入 `~/.dsh/bionic-soul/.migrated-from`，避免重复迁移。
+- 写入 `~/.dsh/bionic-soul/.migrated-from`，避免重复迁移；确认全局数据无误并清理旧目录后，该标记也可以删除。
 
-**旧目录不会删除**，它保留为冷备份。迁移完成后，日常运行只使用全局目录。
+迁移**不会自动删除**旧目录。确认全局数据无误后，可以手动清理旧目录、旧指针和迁移标记。当前机器已经清理完毕，全局目录是唯一数据源。
 
-当前机器已经完成过这一步：旧库的 28 条情景、2 条本能、1 场梦、8 条边已进入全局 `cortex`，旧目录仍在。
+当前机器已经完成迁移并清理：全局 `cortex` 中有 40 条情景、3 条本能、2 场梦、11 条边；旧 workspace-local 目录、旧 profile 目录、profile 指针和 `.migrated-from` 均已删除。
 
 ## 4. 数据目录覆盖
 
@@ -82,7 +82,7 @@ C:\Users\unity\.dsh\bionic-soul\
 - 在本地 `cordis.patch.yml` 给 `bionic-memory` 行配置绝对 `dataDir`；
 - 不要把个人绝对路径提交到公开仓库。
 
-profile 指针和 `BIONIC_MEMORY_DATA_DIR` 不再决定日常运行目录，只用于一次性旧数据迁移。
+profile 指针和 `BIONIC_MEMORY_DATA_DIR` 不再决定日常运行目录，只用于一次性旧数据迁移。当前机器已经删除旧指针，日常直接使用全局目录。
 
 ## 5. 重置与备份
 

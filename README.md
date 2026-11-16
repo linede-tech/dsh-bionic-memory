@@ -46,7 +46,7 @@
   evolution_lab/
 ```
 
-无论 DSH 在哪个工作区启动、新建多少会话，只要进入「永续记忆模式」都连接这个全局目录。旧版 workspace-local 数据会在首次 boot 时一次性迁移进全局目录；旧目录不会删除。
+无论 DSH 在哪个工作区启动、新建多少会话，只要进入「永续记忆模式」都连接这个全局目录。旧版 workspace-local 数据会在首次 boot 时一次性迁移进全局目录；迁移不会自动删除旧目录，确认后可手动清理。当前机器已清理旧目录、旧指针和迁移标记，全局目录是唯一数据源。
 
 如需自定义位置，可在本地 `cordis.patch.yml` 给 `bionic-memory` 行配置绝对 `dataDir`，或保留 profile-local 指针 `<profile>/.dsh/bionic-memory-location.json` 作为迁移来源。指针不再决定日常运行目录，只用于一次性迁移。
 
@@ -122,7 +122,7 @@
 
 ### Git 守护与迁移
 
-`~/.dsh/bionic-soul/` 自动 `git init` 并建立初始 commit；`evolution_lab/` 保留元认知快照与提案。旧 workspace-local `.dsh/bionic-memory` 会在首次 boot 时复制进全局目录（DB 用 SQLite `VACUUM INTO`，旧目录只作冷备份），迁移后写入 `.migrated-from` 标记，避免重复。
+`~/.dsh/bionic-soul/` 自动 `git init` 并建立初始 commit；`evolution_lab/` 保留元认知快照与提案。旧 workspace-local `.dsh/bionic-memory` 会在首次 boot 时复制进全局目录（DB 用 SQLite `VACUUM INTO`），迁移后写入 `.migrated-from` 标记避免重复；迁移不会自动删除旧目录，确认后可清理。当前机器已清理旧目录、指针和标记。
 
 ## 四层记忆
 
