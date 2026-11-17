@@ -43,7 +43,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.1.1';
+const BUILD = 'bionic-1.1.2';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -586,7 +586,7 @@ export function apply(ctx, rawConfig) {
               text.split(AUTONOMOUS_MARKER)[1]?.replace(/^[^\]]*\]\s*/, '').trim() || '想和他说说话';
             return {
               ...message,
-              content: [{ type: 'text', text: `（她忽然想起：${intention}）` }],
+              content: [{ type: 'text', text: `【bionic·internal】${intention}` }],
             };
           });
           if (!decision.messages.length) {
@@ -595,7 +595,7 @@ export function apply(ctx, rawConfig) {
                 role: 'user',
                 id: `autonomous-fallback-${Date.now()}`,
                 time: Date.now(),
-                content: [{ type: 'text', text: '（她忽然想起：想和他说说话。）' }],
+                content: [{ type: 'text', text: '【bionic·internal】想和他说说话。' }],
                 source: { kind: 'user' },
               },
             ];

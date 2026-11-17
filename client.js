@@ -1324,6 +1324,63 @@ window.__ModuleLoader__.load({
             },
           ),
         );
+
+        // The autonomous wake is a real user message in the session log so the
+        // model always receives non-empty input; this client-only filter keeps
+        // its internal carrier out of the visible conversation. It never
+        // touches the session, the model input, or the assistant reply.
+        ctx.effect(() => {
+          if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+            return () => {};
+          }
+          const MARKERS = ['【bionic·internal】', '（她忽然想起：'];
+          const style = document.createElement('style');
+          style.setAttribute('data-bionic-hidden-style', '1');
+          style.textContent = '[data-bionic-hidden="1"]{display:none!important}';
+          document.head.appendChild(style);
+
+          let scheduled = false;
+          const scan = () => {
+            if (typeof document === 'undefined') return;
+            const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+            let node = walker.nextNode();
+            while (node) {
+              const text = String(node.textContent || '');
+              if (!MARKERS.some((marker) => text.includes(marker))) {
+                node = walker.nextNode();
+                continue;
+              }
+              let target = node.parentElement;
+              const ownLength = text.replace(/\s+/g, ' ').trim().length;
+              for (let depth = 0; target && depth < 8; depth += 1) {
+                const parent = target.parentElement;
+                if (!parent || parent === document.body || !parent.textContent.includes(MARKERS.find((m) => text.includes(m)))) break;
+                const parentLength = parent.textContent.replace(/\s+/g, ' ').trim().length;
+                if (parentLength > ownLength + 140) break;
+                target = parent;
+              }
+              if (target) target.setAttribute('data-bionic-hidden', '1');
+              node = walker.nextNode();
+            }
+          };
+          const schedule = () => {
+            if (scheduled) return;
+            scheduled = true;
+            const run = () => {
+              scheduled = false;
+              scan();
+            };
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+            else setTimeout(run, 30);
+          };
+          const observer = new MutationObserver(schedule);
+          observer.observe(document.body, { childList: true, subtree: true, characterData: true });
+          scan();
+          return () => {
+            observer.disconnect();
+            style.remove();
+          };
+        }, 'bionic-memory: hide autonomous carrier');
       },
     };
   },
