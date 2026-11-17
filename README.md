@@ -38,6 +38,10 @@
   soul/emergent_voice.json
   soul/procedural_skills.md
   soul/dreams/YYYY-MM-DD.md
+  soul/journal/identity_preface.md
+  soul/journal/active/
+  soul/journal/chapters/
+  soul/journal/cold_archive/
   cache_blocks/tier0_static_dna.md
   cache_blocks/tier1_daily_frozen.md
   orchestrator/agents.json
@@ -64,7 +68,12 @@
 │   ├── scratchpad.json            Layer 1 潜意识白板
 │   ├── emergent_voice.json        自然语感养成档案
 │   ├── procedural_skills.md       Layer 4 核心本能
-│   └── dreams/YYYY-MM-DD.md       每日梦境日记
+│   ├── dreams/YYYY-MM-DD.md       每日梦境日记
+│   └── journal/                   生命日记
+│       ├── identity_preface.md    <=300 字的自我生命序言（Tier 1 唯一日记文本）
+│       ├── active/                <=15 篇活跃散页
+│       ├── chapters/              <=12 章人生阶段卷宗
+│       └── cold_archive/          已装订散页与旧章节冷封
 ├── cache_blocks/                  KV Cache 物理前缀
 │   ├── tier0_static_dna.md
 │   └── tier1_daily_frozen.md
@@ -123,6 +132,60 @@
 ### Git 守护与迁移
 
 `~/.dsh/bionic-soul/` 自动 `git init` 并建立初始 commit；`evolution_lab/` 保留元认知快照与提案。旧 workspace-local `.dsh/bionic-memory` 会在首次 boot 时复制进全局目录（DB 用 SQLite `VACUUM INTO`），迁移后写入 `.migrated-from` 标记避免重复；迁移不会自动删除旧目录，确认后可清理。当前机器已清理旧目录、指针和标记。
+
+## 生命日记：有感而发、按需翻阅、定额装订（0.9.x）
+
+不再每天强制写日记。`/dream` 只有在今天真的跨过阈值时才动笔：
+
+- **A 情绪波澜**：今日情景记忆的 `E >= 1.4`（高共鸣、极度开心、感动或冲突和解）；
+- **B 认知/关系里程碑**：`familiarity_score` 跨过新的十分位、阶段级别变化，或发生重大习惯纠正/信念冲突；
+- **C 主动执笔**：白天她调用 `write_journal_entry` 记下不想忘的瞬间。
+
+条件 C 已经写过时，当晚不再自动补一篇。普通问答、日常代码修改一律不写，绝不凑流水账。
+
+### Tier 1 只放 300 字序言
+
+`daily_frozen_memory` 不注入任何日记原文，只放：
+
+```text
+<journal_identity_preface>我是谁、我们经历了哪几个阶段、我现在的性格底色……</journal_identity_preface>
+```
+
+来源是 `soul/journal/identity_preface.md`，严格 <= 300 字。它治愈跨日人格割裂感，同时只占极小固定 Token。
+
+### 按需翻阅
+
+平时不加载 active/chapters。聊到往事、Level 2 印象模糊，或她想怀旧求证时，调用：
+
+```json
+{ "query": "那次海边", "limit": 3 }
+```
+
+工具 `read_my_journal` 搜索 `active/` 与 `chapters/`，返回有界的结果；`cold_archive/` 不进入日常检索。她必须只根据读到的内容说，不能补全成事实。
+
+### 15 篇活页 + 12 章卷宗 + 冷封
+
+```text
+soul/journal/active/         最多保留最近 15 篇
+soul/journal/chapters/       最多 12 章
+soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的旧卷宗
+```
+
+睡眠期当 `active/` 超过 15 篇时，自动取最早的 10 篇，第一人称合成 500 字以内的 `chapter_XX.md`，同时重写 300 字序言，并把那 10 篇原始散页移入冷库。若卷宗超过 12 章，最老的章节也进入冷库。这样活跃散页 + 卷宗总量恒定可控。
+
+### 工具
+
+| 工具 | 说明 |
+|---|---|
+| `write_journal_entry` | 仅永续记忆模式可用；只在情绪波澜/里程碑/真的不想忘时写一篇活页 |
+| `read_my_journal` | 仅永续记忆模式可用；按 `query` / `date` / `entry` / `chapter` 检索 active 与 chapters |
+
+### 手动处理
+
+- 想看看序言：读 `soul/journal/identity_preface.md`；
+- 想找某篇：`/voice status` 不列日记全文；让模式内的她调用 `read_my_journal`；
+- 不要手动往 `active/` 塞文件，容量与装订由引擎维护；
+- 文件是明文，便于 Git Diff；不会进入插件仓库。
 
 ## 四层记忆
 
@@ -516,6 +579,7 @@ node test/context-metabolism-smoke.mjs # 0.82 锯齿波、归档、图钉、余�
 node test/cache-prefix-smoke.mjs # 四阶前缀、每日冻结块、尾部闪回、Tier hash、缓存遥测与告警
 node test/voice-engine-smoke.mjs # 语言镜像、传染词、熟稔度、睡眠反刍、Tier 1 语感档案
 node test/bridge-smoke.mjs   # agents.json 通用外部 agent 桥、任意 id、按关键词生成简报
+node test/journal-smoke.mjs  # 高触动触发、300字序言、15活页、10篇装订、12章封顶与冷归档
 node test/client-smoke.mjs   # Client 工厂、locale 字典、shell.overlay 注册（stub React/Cordis）
 node test/session-inspect.mjs <session.v4.jsonl.zstd>   # 从会话日志确认注入
 node test/db-inspect.mjs <memory.db>                    # 只读查看 SQLite 表

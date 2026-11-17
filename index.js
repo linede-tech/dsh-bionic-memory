@@ -41,7 +41,7 @@ let RULES = RULES_SOURCE;
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.8.2';
+const BUILD = 'bionic-0.9.0';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -871,6 +871,12 @@ export function apply(ctx, rawConfig) {
             dream.narrative,
             '——梦里 80% 的细节已经忘掉了。',
             `余韵：${dream.afterglow}`,
+            result.journal?.written?.written
+              ? `生命日记：写了一篇「${result.journal.written.entry?.title || ''}」`
+              : '生命日记：今天没有高触动，不写流水账',
+            result.journal?.bound?.bound
+              ? `卷宗装订：${result.journal.bound.chapter?.id || ''}（移入冷封 ${result.journal.bound.moved} 篇）`
+              : '',
             voice?.notes?.length ? `语感反刍：${voice.notes.join('；')}` : '',
             meta?.summary ? `元认知进化：${meta.summary}` : '',
             meta?.tier3?.changed ? '有一个代码进化提案待审阅：使用 `/evolve approve` 查看并决定是否合入。' : '',
@@ -1314,10 +1320,118 @@ export function apply(ctx, rawConfig) {
     },
   });
 
+  const journalWriteDisposer = ctx.tools.register({
+    name: 'write_journal_entry',
+    description:
+      'Write one life-journal entry, available only in the Bionic Memory Mode. Use only for a moment you genuinely do not want to forget: strong feeling, a relationship milestone, or a real shift. Do not journal ordinary questions, code chores, or routine days.',
+    parameters: {
+      type: 'object',
+      properties: {
+        title: { type: 'string', description: 'Short title for this moment.' },
+        content: { type: 'string', description: 'First-person journal body. Write the real feeling, not a task log.' },
+        mood: { type: 'string', description: 'Optional short mood label.' },
+        tags: { type: 'array', items: { type: 'string' }, description: 'Optional short tags.' },
+      },
+      required: ['content'],
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: { success: { type: 'boolean' } },
+        additionalProperties: true,
+      },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里写生命日记。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      if (!current.lifeJournal) return { success: false, error: '生命日记模块未启用' };
+      const entry = current.lifeJournal.writeManual({
+        title: String(args?.title || ''),
+        body: String(args?.content || ''),
+        mood: String(args?.mood || ''),
+        tags: Array.isArray(args?.tags) ? args.tags : [],
+        familiarity: current.voiceEngine?.state?.familiarity?.score || 0,
+        familiarityLevel: current.voiceEngine?.state?.familiarity?.level || '',
+      });
+      if (!entry) return { success: false, error: '日记太短或为空' };
+      return {
+        success: true,
+        entry: { id: entry.id, title: entry.title, date: entry.date },
+        note: '已收进 soul/journal/active。具体日记不会进入 Tier 1；之后需要时可调用 read_my_journal 翻阅。',
+      };
+    },
+  });
+
+  const journalReadDisposer = ctx.tools.register({
+    name: 'read_my_journal',
+    description:
+      'On-demand only: search or read your own life journal (active loose entries and bound chapters), available only in the Bionic Memory Mode. Use when the user talks about the past and your memory is fuzzy, or when you genuinely want to look back. Do not call it for ordinary current questions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Text to search in titles and bodies.' },
+        date: { type: 'string', description: 'YYYY-MM-DD of a specific entry.' },
+        entry: { type: 'string', description: 'Entry id or filename.' },
+        chapter: { type: 'string', description: 'Chapter id or filename.' },
+        limit: { type: 'number', description: 'Maximum entries to return, 1-5. Defaults to 3.' },
+      },
+    },
+    output: {
+      schema: {
+        type: 'object',
+        properties: { success: { type: 'boolean' } },
+        additionalProperties: true,
+      },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里翻阅生命日记。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      if (!current.lifeJournal) return { success: false, error: '生命日记模块未启用' };
+      const result = current.lifeJournal.read({
+        query: String(args?.query || ''),
+        date: String(args?.date || ''),
+        entry: String(args?.entry || ''),
+        chapter: String(args?.chapter || ''),
+        limit: Number(args?.limit) || 3,
+      });
+      return { success: true, ...result };
+    },
+  });
+
   ctx.effect(
     () => () => {
       try {
         toolDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        journalWriteDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        journalReadDisposer();
       } catch {
         /* ignore */
       }
