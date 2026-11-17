@@ -1442,6 +1442,7 @@ window.__ModuleLoader__.load({
           const SHELL_CLASS = 'bionic-avatar-shell';
           const HOLDER_ATTR = 'data-bionic-identity';
           let identity = null;
+          let identitySession = '';
           let sessionId = '';
           let loading = false;
           let scheduled = false;
@@ -1460,7 +1461,8 @@ window.__ModuleLoader__.load({
           };
 
           const decorate = () => {
-            if (!identity) {
+            const sid = currentSession();
+            if (!identity || !sid || identitySession !== sid) {
               removeDecorations();
               return;
             }
@@ -1501,6 +1503,16 @@ window.__ModuleLoader__.load({
             scheduled = true;
             const run = () => {
               scheduled = false;
+              const sid = currentSession();
+              if (sid !== sessionId || (identity && identitySession !== sid)) {
+                if (sid !== sessionId) {
+                  void refresh();
+                  return;
+                }
+                identity = null;
+                identitySession = '';
+                removeDecorations();
+              }
               decorate();
             };
             if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
@@ -1513,6 +1525,7 @@ window.__ModuleLoader__.load({
             if (sid !== sessionId) {
               sessionId = sid;
               identity = null;
+              identitySession = '';
               removeDecorations();
             }
             if (!sid || loading) return;
@@ -1523,12 +1536,26 @@ window.__ModuleLoader__.load({
                 cache: 'no-store',
               });
               const body = await response.json().catch(() => ({ ok: false }));
-              identity = response.ok && body?.ok !== false && body?.enabled ? body : null;
+              if (response.ok && body?.ok !== false && body?.enabled && currentSession() === sid) {
+                identity = body;
+                identitySession = sid;
+              } else {
+                identity = null;
+                identitySession = '';
+              }
             } catch {
               identity = null;
+              identitySession = '';
             } finally {
               loading = false;
-              scheduleDecorate();
+              if (currentSession() === sid) {
+                scheduleDecorate();
+              } else {
+                identity = null;
+                identitySession = '';
+                removeDecorations();
+                void refresh();
+              }
             }
           };
 

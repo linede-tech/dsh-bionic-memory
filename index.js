@@ -44,7 +44,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.2.0';
+const BUILD = 'bionic-1.2.1';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -827,7 +827,7 @@ export function apply(ctx, rawConfig) {
   // ------------------------------------------------------- monitor data plane
 
   ctx.effect(
-    () => registerWebRoutes({ ctx, getEngine, logger, isActiveFor }),
+    () => registerWebRoutes({ ctx, getEngine, logger, isActiveFor, presetId: config.presetId }),
     'bionic-memory: web routes',
   );
 
