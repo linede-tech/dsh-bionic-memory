@@ -43,7 +43,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.1.0';
+const BUILD = 'bionic-1.1.1';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -76,6 +76,7 @@ export function apply(ctx, rawConfig) {
   let lastUserActivityAt = 0;
   let lastSleepKey = '';
   const proactiveTicks = new Map();
+  const proactiveRuns = new Map();
   const AUTONOMOUS_MARKER = '[bionic-autonomous-tick:';
   let modeEngaged = false;
 
@@ -576,9 +577,29 @@ export function apply(ctx, rawConfig) {
           textOfContent(message?.content).includes(AUTONOMOUS_MARKER),
         );
         if (autonomous && decision?.kind === 'enter') {
-          // The wake message is an internal carrier only; her own reply is the
-          // first thing that should appear in the conversation surface.
-          decision.messages = [];
+          // Keep the model input non-empty: replace the internal carrier with a
+          // minimal, gentle wake prompt. The raw marker must never be displayed.
+          decision.messages = (decision.messages || []).map((message) => {
+            const text = textOfContent(message?.content);
+            if (!text.includes(AUTONOMOUS_MARKER)) return message;
+            const intention =
+              text.split(AUTONOMOUS_MARKER)[1]?.replace(/^[^\]]*\]\s*/, '').trim() || '想和他说说话';
+            return {
+              ...message,
+              content: [{ type: 'text', text: `（她忽然想起：${intention}）` }],
+            };
+          });
+          if (!decision.messages.length) {
+            decision.messages = [
+              {
+                role: 'user',
+                id: `autonomous-fallback-${Date.now()}`,
+                time: Date.now(),
+                content: [{ type: 'text', text: '（她忽然想起：想和他说说话。）' }],
+                source: { kind: 'user' },
+              },
+            ];
+          }
         }
       } catch (error) {
         logger?.warn?.(`[bionic-memory] autonomous wake strip failed: ${error?.message || error}`);
@@ -701,6 +722,7 @@ export function apply(ctx, rawConfig) {
   function onSessionEvent(session, event) {
     if (!session || !event) return;
     if (!config.observeAllSessions && !isActiveFor(session)) return;
+    trackProactive(session, event);
     if (event.type === 'user/message') lastUserActivityAt = Date.now();
     try {
       engine?.contextMetabolism?.observeSessionEvent(session, event);
@@ -859,14 +881,38 @@ export function apply(ctx, rawConfig) {
 
   // ------------------------------------------------------ autonomous heartbeat
 
+  function trackProactive(session, event) {
+    const sessionId = String(session?.id || '');
+    const run = proactiveRuns.get(sessionId);
+    if (!run) return;
+    if (event.type === 'assistant/message') {
+      const text = textOfContent(event.data?.message?.content).trim();
+      if (text) run.assistantText = text;
+    }
+    if (event.type !== 'turn/end') return;
+    try {
+      const schedule = new MySchedule({ dataDir: SOUL_ROOT, logger, clock: () => Date.now() });
+      if (String(run.assistantText || '').trim()) {
+        schedule.mark(run.entryId, 'fired', { session_id: sessionId, result: 'ok' });
+      } else {
+        schedule.mark(run.entryId, 'pending', { reason: 'empty-turn', session_id: sessionId });
+      }
+    } catch (error) {
+      logger?.warn?.(`[bionic-memory] proactive completion update failed: ${error?.message || error}`);
+    }
+    proactiveRuns.delete(sessionId);
+  }
+
   function startHeartbeat() {
     const schedule = new MySchedule({ dataDir: SOUL_ROOT, logger, clock: () => Date.now() });
     schedule.init();
+    schedule.recoverFiring();
 
     const tick = async () => {
       if (disposed) return;
       const now = Date.now();
       for (const entry of schedule.due(now)) {
+        let targetId = '';
         try {
           if (entry.action_type === 'go_to_sleep') {
             const current = await getEngine();
@@ -888,6 +934,7 @@ export function apply(ctx, rawConfig) {
             continue;
           }
           proactiveTicks.set(String(target.id), { ...entry, at: now });
+          targetId = String(target.id);
           const message = {
             role: 'user',
             id: `autonomous-${entry.id}-${now}`,
@@ -895,17 +942,28 @@ export function apply(ctx, rawConfig) {
             content: [{ type: 'text', text: `${AUTONOMOUS_MARKER}${entry.id}] ${entry.my_intention}` }],
             source: { kind: 'user' },
           };
-          if (typeof target.followup === 'function') {
-            target.followup(message);
-          } else if (typeof target.send === 'function') {
-            target.send(message, 'next-turn', true);
-          } else {
-            throw new Error('live agent has no followup/send');
+          schedule.mark(entry.id, 'firing', { session_id: String(target.id) });
+          proactiveRuns.set(String(target.id), {
+            entryId: entry.id,
+            at: now,
+            assistantText: '',
+          });
+          try {
+            if (typeof target.followup === 'function') {
+              target.followup(message);
+            } else if (typeof target.send === 'function') {
+              target.send(message, 'next-turn', true);
+            } else {
+              throw new Error('live agent has no followup/send');
+            }
+          } catch (error) {
+            proactiveRuns.delete(String(target.id));
+            throw error;
           }
-          schedule.mark(entry.id, 'fired', { session_id: String(target.id) });
           logger?.info?.(`[bionic-memory] autonomous tick started in ${target.id}: ${entry.my_intention}`);
         } catch (error) {
           logger?.warn?.(`[bionic-memory] autonomous tick failed: ${error?.message || error}`);
+          if (targetId) proactiveRuns.delete(targetId);
           schedule.mark(entry.id, 'pending', { error: String(error?.message || error) });
         }
       }

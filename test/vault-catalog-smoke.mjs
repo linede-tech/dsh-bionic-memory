@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { MemoryCatalog } from '../lib/catalog.js';
 import { MySchedule } from '../lib/schedule.js';
-import { writeDream } from '../lib/soul-storage.js';
+import { hasDreamOn, writeDream } from '../lib/soul-storage.js';
 import { openStore } from '../lib/store.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -130,6 +130,9 @@ async function main() {
     fs.readFileSync(secondDream, 'utf8').includes('第二场梦'),
     'the earlier dream survives the second one',
   );
+  check(hasDreamOn(DATA, '2026-11-17') === true, 'numbered dream files are detected');
+  fs.writeFileSync(path.join(DATA, 'soul', 'dreams', '2026-11-13.md'), '# legacy dream\n', 'utf8');
+  check(hasDreamOn(DATA, '2026-11-13') === true, 'legacy date-only dream files are detected too');
 
   const schedule = new MySchedule({ dataDir: DATA, clock: () => Date.UTC(2026, 10, 17, 9, 0, 0) });
   schedule.init();
@@ -139,7 +142,12 @@ async function main() {
   check(schedule.due(alarm.wake_at).length === 1, 'alarm is due at wake time');
   schedule.mark(alarm.id, 'fired', { session_id: 's1' });
   check(schedule.due(alarm.wake_at + 1).length === 0, 'fired alarm is not due again');
-  check(JSON.parse(fs.readFileSync(schedule.file, 'utf8')).entries.length === 1, 'schedule persisted to soul/my_schedule.json');
+  const firing = schedule.add({ delayMinutes: 60, intention: '测试 firing 恢复', actionType: 'silent_task' });
+  schedule.mark(firing.id, 'firing');
+  check(schedule.due(firing.wake_at).length === 0, 'firing alarm is not retriggered');
+  schedule.recoverFiring();
+  check(schedule.due(firing.wake_at).some((entry) => entry.id === firing.id), 'interrupted firing alarm returns to pending');
+  check(JSON.parse(fs.readFileSync(schedule.file, 'utf8')).entries.length === 2, 'schedule persisted to soul/my_schedule.json');
 
   store.close();
   fs.rmSync(DATA, { recursive: true, force: true });
