@@ -44,6 +44,8 @@
   soul/journal/cold_archive/
   soul/memory_catalog.md
   soul/my_schedule.json
+  assets/avatar.png
+  config.json
   cache_blocks/tier0_static_dna.md
   cache_blocks/tier1_daily_frozen.md
   orchestrator/agents.json
@@ -78,6 +80,12 @@
 │       └── cold_archive/          已装订散页与旧章节冷封
 │   ├── memory_catalog.md          一天一行家底目录（最近90天进 Tier 1）
 │   └── my_schedule.json           她自己定的闹钟
+├── assets/                        她的视觉资产
+│   ├── avatar.png                 主头像（可替换）
+│   ├── avatar_happy.png           可选：开心表情
+│   ├── avatar_sleepy.png          可选：困倦表情
+│   └── avatar_curious.png         可选：好奇表情
+├── config.json                    她的名字与头像来源
 ├── cache_blocks/                  KV Cache 物理前缀
 │   ├── tier0_static_dna.md
 │   └── tier1_daily_frozen.md
@@ -285,6 +293,64 @@ soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的�
 - **闹钟状态分阶段**：心跳入队时先写 `firing`；只有本轮 `turn/end` 且 assistant 产出非空文本才写 `fired`；空转/无话回到 `pending`；插件重启时遗留的 `firing` 自动恢复为 `pending`。
 - **旧梦文件名兼容**：家底补录同时识别 `YYYY-MM-DD.md` 与 `YYYY-MM-DD_#NN.md`；有梦的天写 `[已聊/已眠补录] ... (睡眠:已触发)`。
 - **目录人话摘要**：不再用机械切词；优先取当天日记、梦境余韵或高权重记忆梗概，整理成 15–30 字的单行中文；历史目录在启动时整体重刷。
+
+## 专属形象：头像、名字与心情光效（1.2.x）
+
+全局目录新增：
+
+```text
+~/.dsh/bionic-soul/
+├── assets/
+│   ├── avatar.png            默认主头像（已自动生成深海蓝鲸鱼）
+│   ├── avatar_happy.png      可选，开心时自动切换
+│   ├── avatar_sleepy.png     可选，困倦时自动切换
+│   └── avatar_curious.png    可选，好奇时自动切换
+└── config.json               名字与头像来源
+```
+
+`config.json`：
+
+```json
+{
+  "name": "小溯",
+  "avatar": "assets/avatar.png",
+  "moods": {
+    "happy": "assets/avatar_happy.png",
+    "sleepy": "assets/avatar_sleepy.png",
+    "curious": "assets/avatar_curious.png"
+  }
+}
+```
+
+- `avatar` 支持本地路径、`http(s)://` URL、`data:image/...;base64,...`；
+- `name` 是聊天里显示的自定义名字；
+- 有对应心情图片时优先切换表情；只有主头像时切换外圈微光。
+
+### 聊天界面
+
+在「永续记忆模式」会话里，客户端会给每条 assistant 消息加上她的专属头像与名字：
+
+- 圆形头像 + 呼吸感边框；
+- 默认静谧蓝；
+- 开心/高共鸣：暖色微光；
+- 好奇：青绿色脉冲；
+- 困倦/刚睡醒：柔和慢呼吸；
+- `scratchpad.visual_status = "monitoring"`（或 `external_agents_active = true`）：外圈转圈闪烁，表示她正在后台监工。
+
+标准会话不会显示，只有该会话被识别为「永续记忆模式」时才挂载。客户端每 5 秒刷新一次身份数据，换头像/心情变化会自动生效。
+
+### 换头像
+
+- 指令：`/avatar <本地图片路径 | URL | data:...>`
+- 或者直接对她说「换个头像：D:\pictures\me.png」，她会调用 `set_my_avatar`：
+  - 自动复制/下载到 `~/.dsh/bionic-soul/assets/avatar.png`；
+  - 旧头像备份为 `assets/avatar.previous-*.png`（保留最近 5 个）；
+  - 可通过工具参数 `name` 同时改名字；
+  - Web 界面数秒内刷新。
+
+### 测试
+
+`test/visual-smoke.mjs` 覆盖默认头像生成、`config.json`、心情映射、表情头像发现、头像替换与备份。测试数据会自动清理。
 
 ## 四层记忆
 
@@ -680,6 +746,7 @@ node test/voice-engine-smoke.mjs # 语言镜像、传染词、熟稔度、睡眠
 node test/bridge-smoke.mjs   # agents.json 通用外部 agent 桥、任意 id、按关键词生成简报
 node test/journal-smoke.mjs  # 高触动触发、300字序言、15活页、10篇装订、12章封顶与冷归档
 node test/vault-catalog-smoke.mjs # FTS5原话冷库、一天一行家底目录、自主闹钟
+node test/visual-smoke.mjs   # 默认头像、config.json、心情映射与头像替换
 node test/client-smoke.mjs   # Client 工厂、locale 字典、shell.overlay 注册（stub React/Cordis）
 node test/session-inspect.mjs <session.v4.jsonl.zstd>   # 从会话日志确认注入
 node test/db-inspect.mjs <memory.db>                    # 只读查看 SQLite 表

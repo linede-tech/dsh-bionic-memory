@@ -29,6 +29,7 @@ import {
   soulPaths,
 } from './lib/soul-storage.js';
 import { isoDate, textOfContent } from './lib/text.js';
+import { ensureVisualAssets, readVisualConfig, setVisualAvatar } from './lib/visual.js';
 import { registerWebRoutes } from './lib/web.js';
 
 export const name = '@local/dsh-bionic-memory';
@@ -43,7 +44,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.1.2';
+const BUILD = 'bionic-1.2.0';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -57,6 +58,7 @@ export function apply(ctx, rawConfig) {
   try {
     const soulRoot = resolveDataDir();
     ensureSoul({ root: soulRoot, tier0Source: RULES_SOURCE, logger });
+    ensureVisualAssets(soulRoot);
     RULES = readTier0(soulRoot) || RULES_SOURCE;
     logger?.info?.(`[bionic-memory] global soul at ${soulRoot}`);
   } catch (error) {
@@ -259,6 +261,7 @@ export function apply(ctx, rawConfig) {
     bootPromise = (async () => {
       const dataDir = resolveDataDir();
       const paths = ensureSoul({ root: dataDir, tier0Source: RULES_SOURCE, logger });
+      ensureVisualAssets(dataDir);
       const legacyDir = readDataDirPointer();
       if (legacyDir && path.resolve(legacyDir) !== path.resolve(dataDir)) {
         try {
@@ -824,7 +827,7 @@ export function apply(ctx, rawConfig) {
   // ------------------------------------------------------- monitor data plane
 
   ctx.effect(
-    () => registerWebRoutes({ ctx, getEngine, logger }),
+    () => registerWebRoutes({ ctx, getEngine, logger, isActiveFor }),
     'bionic-memory: web routes',
   );
 
@@ -1306,6 +1309,46 @@ export function apply(ctx, rawConfig) {
     }),
   );
 
+  commandDisposers.push(
+    ctx.commands.register({
+      name: 'avatar',
+      description: '更换仿生永续记忆模式的人设头像（支持本地路径、URL、Base64）',
+      input: { hint: '<图片路径 | URL | data:...>' },
+      handler: async (invocation) => {
+        if (!isActiveFor(invocation?.agent)) {
+          return { kind: 'error', text: '永续记忆模式专用指令：请切换到「永续记忆模式」后再使用。' };
+        }
+        let current;
+        try {
+          current = await getEngine();
+        } catch (error) {
+          return { kind: 'error', text: `记忆引擎不可用：${error?.message || error}` };
+        }
+        const raw = String(invocation?.rawInput || '')
+          .trim()
+          .replace(/^["']|["']$/g, '');
+        const config = readVisualConfig(current.dataDir);
+        if (!raw) {
+          return {
+            kind: 'success',
+            text: [
+              `她的名字：${config.name}`,
+              `当前头像：${config.avatar}`,
+              `头像目录：${current.dataDir}\\assets`,
+              '换头像：/avatar <本地图片路径 | URL | data:image/...;base64,...>',
+            ].join('\n'),
+          };
+        }
+        const result = await setVisualAvatar(current.dataDir, raw, { logger });
+        if (!result.ok) return { kind: 'error', text: `换头像失败：${result.error}` };
+        return {
+          kind: 'success',
+          text: `已换成新头像（${Math.round(result.bytes / 1024)} KB）→ ${result.path}\n界面会在几秒内自动刷新；名字可在 ${current.dataDir}\\config.json 的 name 修改。`,
+        };
+      },
+    }),
+  );
+
   ctx.effect(
     () => () => {
       for (const dispose of commandDisposers) {
@@ -1755,6 +1798,51 @@ export function apply(ctx, rawConfig) {
     },
   });
 
+  const avatarDisposer = ctx.tools.register({
+    name: 'set_my_avatar',
+    description:
+      'Change your own avatar or display name, available only in the Bionic Memory Mode. Use it only when the user explicitly asks to change your look or name. Accepts a local image path, an http(s) URL, or a data: URI.',
+    parameters: {
+      type: 'object',
+      properties: {
+        source: { type: 'string', description: 'Local image path, http(s) URL, or data:image/...;base64,...' },
+        name: { type: 'string', description: 'Optional new display name.' },
+      },
+      required: ['source'],
+    },
+    output: {
+      schema: { type: 'object', properties: { success: { type: 'boolean' } }, additionalProperties: true },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里更换头像。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      const result = await setVisualAvatar(current.dataDir, String(args?.source || ''), {
+        name: String(args?.name || ''),
+        logger,
+      });
+      if (!result.ok) return { success: false, error: result.error };
+      return {
+        success: true,
+        avatar: {
+          path: result.path,
+          bytes: result.bytes,
+          name: result.name,
+        },
+        note: '头像已替换，Web 界面会在几秒内自动刷新。',
+      };
+    },
+  });
+
   ctx.effect(
     () => () => {
       try {
@@ -1784,6 +1872,11 @@ export function apply(ctx, rawConfig) {
       }
       try {
         hypothesesDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        avatarDisposer();
       } catch {
         /* ignore */
       }

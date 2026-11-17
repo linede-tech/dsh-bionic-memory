@@ -1381,6 +1381,168 @@ window.__ModuleLoader__.load({
             style.remove();
           };
         }, 'bionic-memory: hide autonomous carrier');
+        // Visual identity for the bionic persona. This is display-only: it
+        // decorates assistant rows in a Bionic Memory Mode Session with her
+        // configured avatar/name and a mood/status glow.
+        ctx.effect(() => {
+          if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
+            return () => {};
+          }
+          const style = document.createElement('style');
+          style.setAttribute('data-bionic-identity-style', '1');
+          style.textContent = `
+.bionic-identity-row { position: relative !important; padding-left: 54px !important; }
+.bionic-assistant-identity { position: absolute; left: 2px; top: 1px; width: 44px; display: flex; flex-direction: column;
+  align-items: center; gap: 5px; z-index: 2; pointer-events: none; }
+.bionic-avatar-shell { position: relative; width: 38px; height: 38px; border-radius: 50%; padding: 2px;
+  display: grid; place-items: center; background: conic-gradient(from 210deg, #3a7fa8, #8ee8ff, #2a5f86, #3a7fa8);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #8ee8ff 45%, transparent), 0 0 16px color-mix(in srgb, #3a9cc4 55%, transparent);
+  animation: bionic-avatar-breathe 5.2s ease-in-out infinite; transition: background 400ms ease, box-shadow 400ms ease; }
+.bionic-avatar-shell::before { content: ''; position: absolute; inset: -4px; border-radius: 50%;
+  border: 1px solid color-mix(in srgb, #8ee8ff 38%, transparent); animation: bionic-avatar-ring 5.2s ease-in-out infinite; }
+.bionic-avatar-shell img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block;
+  background: #06111e; }
+.bionic-avatar-name { max-width: 52px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 10px; line-height: 1.2; color: var(--dsw-alias-label-secondary); text-align: center; }
+.bionic-assistant-identity[data-mood="happy"] .bionic-avatar-shell {
+  background: conic-gradient(from 210deg, #ffb35c, #ffe0a3, #ff8f70, #ffb35c);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #ffd18a 55%, transparent), 0 0 20px color-mix(in srgb, #ff9d5c 60%, transparent);
+  animation-duration: 3.8s; }
+.bionic-assistant-identity[data-mood="happy"] .bionic-avatar-shell::before { border-color: color-mix(in srgb, #ffd18a 55%, transparent); }
+.bionic-assistant-identity[data-mood="sleepy"] .bionic-avatar-shell {
+  background: conic-gradient(from 210deg, #5c6fa8, #c9d7ff, #4d5f8f, #5c6fa8);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #c9d7ff 40%, transparent), 0 0 14px color-mix(in srgb, #6d7fb8 45%, transparent);
+  animation-duration: 8s; opacity: .92; }
+.bionic-assistant-identity[data-mood="curious"] .bionic-avatar-shell {
+  background: conic-gradient(from 210deg, #2fd6c8, #b8fff7, #2b8fbd, #2fd6c8);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #9afff2 55%, transparent), 0 0 18px color-mix(in srgb, #36d8c0 55%, transparent);
+  animation-duration: 4s; }
+.bionic-assistant-identity[data-mood="monitoring"] .bionic-avatar-shell {
+  background: conic-gradient(from 0deg, #ffd166, #6ee7ff, #ffd166, #6ee7ff, #ffd166);
+  box-shadow: 0 0 0 1px color-mix(in srgb, #ffd166 60%, transparent), 0 0 22px color-mix(in srgb, #6ee7ff 55%, transparent); }
+.bionic-assistant-identity[data-mood="monitoring"] .bionic-avatar-shell::before {
+  border-color: transparent; border-top-color: #ffd166; border-right-color: #6ee7ff;
+  animation: bionic-avatar-spin 1.8s linear infinite; }
+@keyframes bionic-avatar-breathe {
+  0%, 100% { transform: translateY(0) scale(1); filter: brightness(1); }
+  50% { transform: translateY(-1px) scale(1.035); filter: brightness(1.08); }
+}
+@keyframes bionic-avatar-ring {
+  0%, 100% { opacity: .45; transform: scale(.98); }
+  50% { opacity: .9; transform: scale(1.04); }
+}
+@keyframes bionic-avatar-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .bionic-avatar-shell, .bionic-avatar-shell::before { animation: none !important; }
+}
+`;
+          document.head.appendChild(style);
+
+          const NAME_CLASS = 'bionic-avatar-name';
+          const SHELL_CLASS = 'bionic-avatar-shell';
+          const HOLDER_ATTR = 'data-bionic-identity';
+          let identity = null;
+          let sessionId = '';
+          let loading = false;
+          let scheduled = false;
+
+          const currentSession = () => {
+            const el = document.querySelector('[data-conversation-session]');
+            return el ? String(el.getAttribute('data-conversation-session') || '') : '';
+          };
+
+          const removeDecorations = () => {
+            for (const holder of document.querySelectorAll(`[${HOLDER_ATTR}]`)) holder.remove();
+            for (const row of document.querySelectorAll('.bionic-identity-row')) {
+              row.classList.remove('bionic-identity-row');
+              delete row.dataset.bionicIdentity;
+            }
+          };
+
+          const decorate = () => {
+            if (!identity) {
+              removeDecorations();
+              return;
+            }
+            for (const row of document.querySelectorAll('[data-chat-flow-kind="assistant-step"]')) {
+              if (row.closest('[data-step-process-body]')) continue;
+              let holder = row.querySelector(`:scope > [${HOLDER_ATTR}]`);
+              if (!holder) {
+                holder = document.createElement('div');
+                holder.setAttribute(HOLDER_ATTR, '1');
+                holder.className = 'bionic-assistant-identity';
+                const shell = document.createElement('span');
+                shell.className = SHELL_CLASS;
+                const img = document.createElement('img');
+                img.alt = '';
+                img.decoding = 'async';
+                shell.appendChild(img);
+                const name = document.createElement('span');
+                name.className = NAME_CLASS;
+                holder.append(shell, name);
+                row.prepend(holder);
+              }
+              const mood = identity.mood || 'calm';
+              const source = identity.moods?.[mood] || identity.avatar || '';
+              const img = holder.querySelector('img');
+              if (img && source && img.getAttribute('src') !== source) img.src = source;
+              if (img) img.alt = identity.name || '';
+              const name = holder.querySelector(`.${NAME_CLASS}`);
+              if (name) name.textContent = identity.name || '';
+              holder.setAttribute('data-mood', mood);
+              holder.setAttribute('data-glow', identity.glow || 'calm');
+              row.classList.add('bionic-identity-row');
+              row.dataset.bionicIdentity = '1';
+            }
+          };
+
+          const scheduleDecorate = () => {
+            if (scheduled) return;
+            scheduled = true;
+            const run = () => {
+              scheduled = false;
+              decorate();
+            };
+            if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+            else setTimeout(run, 30);
+          };
+
+          const refresh = async () => {
+            if (typeof document === 'undefined') return;
+            const sid = currentSession();
+            if (sid !== sessionId) {
+              sessionId = sid;
+              identity = null;
+              removeDecorations();
+            }
+            if (!sid || loading) return;
+            loading = true;
+            try {
+              const response = await fetch(`/dsh-bionic-memory/identity?session_id=${encodeURIComponent(sid)}`, {
+                headers: { accept: 'application/json' },
+                cache: 'no-store',
+              });
+              const body = await response.json().catch(() => ({ ok: false }));
+              identity = response.ok && body?.ok !== false && body?.enabled ? body : null;
+            } catch {
+              identity = null;
+            } finally {
+              loading = false;
+              scheduleDecorate();
+            }
+          };
+
+          const observer = new MutationObserver(scheduleDecorate);
+          observer.observe(document.body, { childList: true, subtree: true });
+          refresh();
+          const timer = window.setInterval(refresh, 5000);
+          return () => {
+            observer.disconnect();
+            window.clearInterval(timer);
+            style.remove();
+            removeDecorations();
+          };
+        }, 'bionic-memory: visual identity');
       },
     };
   },

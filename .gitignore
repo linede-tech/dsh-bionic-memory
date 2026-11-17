@@ -9,6 +9,7 @@ node_modules/
 .bridge-*/
 .journal-*/
 .vault-*/
+.visual-*/
 *.db
 *.db-wal
 *.db-shm
