@@ -19,6 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { normalizeConfig } from './lib/config.js';
 import { BionicMemoryEngine } from './lib/engine.js';
 import { createLlmHost } from './lib/llm.js';
+import { MySchedule } from './lib/schedule.js';
 import { openStore } from './lib/store.js';
 import {
   SOUL_ROOT,
@@ -27,7 +28,7 @@ import {
   readTier0,
   soulPaths,
 } from './lib/soul-storage.js';
-import { textOfContent } from './lib/text.js';
+import { isoDate, textOfContent } from './lib/text.js';
 import { registerWebRoutes } from './lib/web.js';
 
 export const name = '@local/dsh-bionic-memory';
@@ -40,8 +41,9 @@ let RULES = RULES_SOURCE;
 
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
+const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-0.9.0';
+const BUILD = 'bionic-1.0.0';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -70,6 +72,11 @@ export function apply(ctx, rawConfig) {
   let disposed = false;
   let bootPromise = null;
   let stopScheduler = null;
+  let stopHeartbeat = null;
+  let lastUserActivityAt = 0;
+  let lastSleepKey = '';
+  const proactiveTicks = new Map();
+  const AUTONOMOUS_MARKER = '[bionic-autonomous-tick:';
   let modeEngaged = false;
 
   // ------------------------------------------------------------ data directory
@@ -222,6 +229,11 @@ export function apply(ctx, rawConfig) {
       } catch {
         /* ignore */
       }
+      try {
+        stopHeartbeat?.();
+      } catch {
+        /* ignore */
+      }
       for (const buffer of buffers.values()) {
         if (buffer.timer) clearTimeout(buffer.timer);
       }
@@ -235,6 +247,10 @@ export function apply(ctx, rawConfig) {
       engine = null;
     };
   }, 'bionic-memory: engine');
+
+  if (config.heartbeatEnabled) {
+    stopHeartbeat = startHeartbeat();
+  }
 
   const getEngine = async () => {
     if (engine) return engine;
@@ -409,6 +425,31 @@ export function apply(ctx, rawConfig) {
         },
         interpolate: false,
       });
+      const offAutonomous = systemPrompt.section({
+        name: AUTONOMOUS_SECTION,
+        order: 102,
+        text: () => {
+          if (!isActiveFor(agent)) return '';
+          const tick = proactiveTicks.get(String(agent.id));
+          if (!tick) return '';
+          proactiveTicks.delete(String(agent.id));
+          const action =
+            tick.action_type === 'proactive_message'
+              ? '允许你主动开口；不要提系统、闹钟或后台，只像你自己忽然想起他一样自然。'
+              : tick.action_type === 'silent_task'
+                ? '先安静地做你想做的事；真有想说的再开口，不必汇报过程。'
+                : '这是你自己的睡前/自我照料回合。';
+          return [
+            '<autonomous_tick>',
+            '现在是你的内源性自主回合，不是用户在说话，也不是用户发的消息。',
+            `你醒来时想做的是：${tick.my_intention || '自己待一会儿'}`,
+            action,
+            '不要编造用户没说过的原话；需要核对细节时调用 dig_up_exact_words。',
+            '</autonomous_tick>',
+          ].join('\n');
+        },
+        interpolate: false,
+      });
       // Keep optional host runtime contexts (clock, cwd snapshots, transient
       // route hints) out of the static prefix only in the Bionic Memory Mode;
       // standard sessions keep their normal runtime context.
@@ -424,6 +465,11 @@ export function apply(ctx, rawConfig) {
         }
         try {
           offContext();
+        } catch {
+          /* scope already gone */
+        }
+        try {
+          offAutonomous();
         } catch {
           /* scope already gone */
         }
@@ -525,6 +571,18 @@ export function apply(ctx, rawConfig) {
         logger?.warn?.(`[bionic-memory] context metabolism pre-step failed: ${error?.message || error}`);
       }
       const decision = await next();
+      try {
+        const autonomous = (payload?.messages || []).some((message) =>
+          textOfContent(message?.content).includes(AUTONOMOUS_MARKER),
+        );
+        if (autonomous && decision?.kind === 'enter') {
+          // The wake message is an internal carrier only; her own reply is the
+          // first thing that should appear in the conversation surface.
+          decision.messages = [];
+        }
+      } catch (error) {
+        logger?.warn?.(`[bionic-memory] autonomous wake strip failed: ${error?.message || error}`);
+      }
       try {
         if (
           current?.renderEphemeral
@@ -643,6 +701,7 @@ export function apply(ctx, rawConfig) {
   function onSessionEvent(session, event) {
     if (!session || !event) return;
     if (!config.observeAllSessions && !isActiveFor(session)) return;
+    if (event.type === 'user/message') lastUserActivityAt = Date.now();
     try {
       engine?.contextMetabolism?.observeSessionEvent(session, event);
     } catch (error) {
@@ -796,6 +855,80 @@ export function apply(ctx, rawConfig) {
         }
       }
     };
+  }
+
+  // ------------------------------------------------------ autonomous heartbeat
+
+  function startHeartbeat() {
+    const schedule = new MySchedule({ dataDir: SOUL_ROOT, logger, clock: () => Date.now() });
+    schedule.init();
+
+    const tick = async () => {
+      if (disposed) return;
+      const now = Date.now();
+      for (const entry of schedule.due(now)) {
+        try {
+          if (entry.action_type === 'go_to_sleep') {
+            const current = await getEngine();
+            await current.maybeDream('self_alarm');
+            schedule.mark(entry.id, 'fired');
+            continue;
+          }
+          const active = ctx.agents.list().filter((agent) => isActiveFor(agent));
+          const target = active[active.length - 1];
+          if (!target) {
+            const attempts = Number(entry.attempts) || 0;
+            schedule.mark(entry.id, attempts >= 6 ? 'missed' : 'pending', {
+              reason: 'no-active-mode-session',
+            });
+            continue;
+          }
+          if (target.status === 'running') {
+            schedule.mark(entry.id, 'pending', { reason: 'target-agent-busy' });
+            continue;
+          }
+          proactiveTicks.set(String(target.id), { ...entry, at: now });
+          const message = {
+            role: 'user',
+            id: `autonomous-${entry.id}-${now}`,
+            time: now,
+            content: [{ type: 'text', text: `${AUTONOMOUS_MARKER}${entry.id}] ${entry.my_intention}` }],
+            source: { kind: 'user' },
+          };
+          if (typeof target.followup === 'function') {
+            target.followup(message);
+          } else if (typeof target.send === 'function') {
+            target.send(message, 'next-turn', true);
+          } else {
+            throw new Error('live agent has no followup/send');
+          }
+          schedule.mark(entry.id, 'fired', { session_id: String(target.id) });
+          logger?.info?.(`[bionic-memory] autonomous tick started in ${target.id}: ${entry.my_intention}`);
+        } catch (error) {
+          logger?.warn?.(`[bionic-memory] autonomous tick failed: ${error?.message || error}`);
+          schedule.mark(entry.id, 'pending', { error: String(error?.message || error) });
+        }
+      }
+
+      // Night fallback: long user inactivity + her sleep hour. This is a habit,
+      // not a cron replacement; an explicit go_to_sleep alarm takes precedence.
+      try {
+        if (!lastUserActivityAt || now - lastUserActivityAt < config.sleepIdleMs) return;
+        const hour = new Date(now).getHours();
+        if (hour < config.sleepHour && hour >= 6) return;
+        const key = isoDate(now);
+        if (lastSleepKey === key) return;
+        const current = await getEngine();
+        const result = await current.maybeDream('heartbeat');
+        if (result?.ok) lastSleepKey = key;
+      } catch (error) {
+        logger?.warn?.(`[bionic-memory] heartbeat sleep fallback failed: ${error?.message || error}`);
+      }
+    };
+
+    return interval(config.heartbeatTickMs, () => {
+      tick().catch((error) => logger?.warn?.(`[bionic-memory] heartbeat failed: ${error?.message || error}`));
+    });
   }
 
   // ---------------------------------------------------------- host commands
@@ -1418,6 +1551,118 @@ export function apply(ctx, rawConfig) {
     },
   });
 
+  const digUpDisposer = ctx.tools.register({
+    name: 'dig_up_exact_words',
+    description:
+      'Verbatim vault lookup, available only in the Bionic Memory Mode. The normal context only carries fuzzy impressions; use this when the user asks what was literally said, when a detail needs checking, or when you want to be exact. Searches the FTS5 verbatim_vault and returns the surrounding turns.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query_keywords: { type: 'string', description: 'Keywords or phrase from the original words.' },
+        date_range: {
+          type: 'object',
+          properties: {
+            from: { type: 'string', description: 'YYYY-MM-DD or ISO timestamp.' },
+            to: { type: 'string', description: 'YYYY-MM-DD or ISO timestamp.' },
+          },
+          description: 'Optional day range.',
+        },
+        context_window: { type: 'number', description: 'Turns before/after each match, default 3, max 10.' },
+      },
+      required: ['query_keywords'],
+    },
+    output: {
+      schema: { type: 'object', properties: { success: { type: 'boolean' } }, additionalProperties: true },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里翻旧账。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      try {
+        const result = current.digUpExactWords({
+          query_keywords: String(args?.query_keywords || ''),
+          date_range: args?.date_range || null,
+          context_window: Number(args?.context_window) || 3,
+        });
+        return { success: true, ...result, note: '这些是原始对话记录；引用时保留说话人和时间。' };
+      } catch (error) {
+        return { success: false, error: `翻旧账失败：${error?.message || error}` };
+      }
+    },
+  });
+
+  const scheduleDisposer = ctx.tools.register({
+    name: 'set_my_own_schedule',
+    description:
+      'Set your own future alarm, available only in the Bionic Memory Mode. Use it when you decide you want to wake yourself later: to write, to check a task, to speak first, or to sleep. The heartbeat runs every five minutes without waiting for the user.',
+    parameters: {
+      type: 'object',
+      properties: {
+        wake_at_time: { type: 'string', description: 'ISO local time, e.g. 2026-11-17T23:30:00+08:00.' },
+        delay_minutes: { type: 'number', description: 'Alternative to wake_at_time.' },
+        my_intention: { type: 'string', description: 'What you want to do when you wake.' },
+        action_type: {
+          type: 'string',
+          enum: ['silent_task', 'proactive_message', 'go_to_sleep'],
+          description: 'silent_task: work quietly; proactive_message: speak first; go_to_sleep: run the sleep cycle.',
+        },
+      },
+      required: ['my_intention', 'action_type'],
+    },
+    output: {
+      schema: { type: 'object', properties: { success: { type: 'boolean' } }, additionalProperties: true },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里给自己定闹钟。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      const wakeAt = args?.wake_at_time ? Date.parse(String(args.wake_at_time)) : 0;
+      if (args?.wake_at_time && !Number.isFinite(wakeAt)) {
+        return { success: false, error: 'wake_at_time 无法解析，请用 ISO 时间。' };
+      }
+      try {
+        const schedule = new MySchedule({ dataDir: current.dataDir, logger, clock: () => Date.now() });
+        const entry = schedule.add({
+          wakeAt,
+          delayMinutes: Number(args?.delay_minutes) || 0,
+          intention: String(args?.my_intention || ''),
+          actionType: String(args?.action_type || 'proactive_message'),
+        });
+        return {
+          success: true,
+          schedule: {
+            id: entry.id,
+            wake_at: entry.wake_at,
+            wake_at_iso: new Date(entry.wake_at).toISOString(),
+            my_intention: entry.my_intention,
+            action_type: entry.action_type,
+          },
+          note: '已存入 soul/my_schedule.json；不需要用户再发消息，心跳会检查。',
+        };
+      } catch (error) {
+        return { success: false, error: `设定闹钟失败：${error?.message || error}` };
+      }
+    },
+  });
+
   ctx.effect(
     () => () => {
       try {
@@ -1432,6 +1677,16 @@ export function apply(ctx, rawConfig) {
       }
       try {
         journalReadDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        digUpDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        scheduleDisposer();
       } catch {
         /* ignore */
       }

@@ -8,6 +8,7 @@ node_modules/
 .voice-engine-*/
 .bridge-*/
 .journal-*/
+.vault-*/
 *.db
 *.db-wal
 *.db-shm

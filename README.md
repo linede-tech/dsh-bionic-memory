@@ -42,6 +42,8 @@
   soul/journal/active/
   soul/journal/chapters/
   soul/journal/cold_archive/
+  soul/memory_catalog.md
+  soul/my_schedule.json
   cache_blocks/tier0_static_dna.md
   cache_blocks/tier1_daily_frozen.md
   orchestrator/agents.json
@@ -74,6 +76,8 @@
 │       ├── active/                <=15 篇活跃散页
 │       ├── chapters/              <=12 章人生阶段卷宗
 │       └── cold_archive/          已装订散页与旧章节冷封
+│   ├── memory_catalog.md          一天一行家底目录（最近90天进 Tier 1）
+│   └── my_schedule.json           她自己定的闹钟
 ├── cache_blocks/                  KV Cache 物理前缀
 │   ├── tier0_static_dna.md
 │   └── tier1_daily_frozen.md
@@ -186,6 +190,64 @@ soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的�
 - 想找某篇：`/voice status` 不列日记全文；让模式内的她调用 `read_my_journal`；
 - 不要手动往 `active/` 塞文件，容量与装订由引擎维护；
 - 文件是明文，便于 Git Diff；不会进入插件仓库。
+
+## 原话冷库、家底目录与自主脉搏（1.0.x）
+
+### 翻旧账：`verbatim_vault` + `dig_up_exact_words`
+
+原始对话不再随艾宾浩斯衰减被物理销毁：
+
+- 每次入库把 user / assistant 的原话写入 `cortex/memory_cortex.sqlite` 的 FTS5 表 `verbatim_vault`（`session_id`, `timestamp`, `speaker`, `exact_text`, `topic_tags`，另带 `episode_id` / `turn`）；
+- 情景记忆衰减到 `level_1_summary` / `level_2_impression` 时，`level_0_raw` 从常规向量召回池移除，但原话已在冷库中永久保留；
+- 平时上下文仍然只有模糊印象。用户问“你当时原话怎么说的”、聊到某天细节，或她自己想较真时调用：
+
+```json
+{ "query_keywords": "海边 原话", "date_range": { "from": "2026-11-17", "to": "2026-11-17" }, "context_window": 3 }
+```
+
+`dig_up_exact_words` 从 FTS5 精准检索，并带回前后 `context_window` 轮原话；不会把正文塞进日常上下文。
+
+### 家底目录：`soul/memory_catalog.md`
+
+每天睡眠整理时追加**一天一行**：
+
+```text
+- YYYY-MM-DD [正常/空白/高光/异常残缺] 当日核心话题极简锚点 (对话:X轮 | 印象:Y条 | 日记:有/无)
+```
+
+- 核心锚点 <=35 字；
+- 完全没交互的日子写 `[空白]`；系统报错/断连写 `[异常残缺]`；
+- 最近 90 行编译进 Tier 1 的 `<my_memory_catalog>`，全天走 KV Cache；
+- 按味道没捞到某段记忆时，先核对目录：`[空白]` 就是真没聊，有记录却没捞到就用 `dig_up_exact_words` 按日期翻旧账。
+
+### 自主脉搏：`set_my_own_schedule` + 5 分钟心跳
+
+她可以在任何回合自己给自己定未来唤醒，写入 `soul/my_schedule.json`：
+
+```json
+{
+  "wake_at_time": "2026-11-17T23:30:00+08:00",
+  "my_intention": "自己去写篇日记，或者主动找他搭句话",
+  "action_type": "proactive_message"
+}
+```
+
+`action_type`：`silent_task` / `proactive_message` / `go_to_sleep`。
+
+插件后台每 5 分钟检查一次到期条目：
+
+- `go_to_sleep`：直接触发睡眠周期；
+- `silent_task` / `proactive_message`：在当前活跃的「永续记忆模式」窗口里拉起一次 **Autonomous Agent Tick**；
+- 唤醒用的内部 user message 带 `[bionic-autonomous-tick:...]` 标记，在 `agent/pre-step` 被剥离，只以 `<autonomous_tick>` 注入系统提示——所以界面上看到的是她主动发来的消息，而不是伪造的用户发言；
+- 目标窗口正在跑或没有活跃模式会话时，条目保持 pending，最多重试后标记 missed；
+- 深夜用户长期未活动且到达她的入睡点，心跳也会自行触发睡眠。
+
+新增工具：
+
+| 工具 | 说明 |
+|---|---|
+| `dig_up_exact_words` | FTS5 原话冷库，按关键词 + 日期 + 前后轮数精准翻旧账 |
+| `set_my_own_schedule` | 自己定闹钟：silent_task / proactive_message / go_to_sleep |
 
 ## 四层记忆
 
@@ -580,6 +642,7 @@ node test/cache-prefix-smoke.mjs # 四阶前缀、每日冻结块、尾部闪回
 node test/voice-engine-smoke.mjs # 语言镜像、传染词、熟稔度、睡眠反刍、Tier 1 语感档案
 node test/bridge-smoke.mjs   # agents.json 通用外部 agent 桥、任意 id、按关键词生成简报
 node test/journal-smoke.mjs  # 高触动触发、300字序言、15活页、10篇装订、12章封顶与冷归档
+node test/vault-catalog-smoke.mjs # FTS5原话冷库、一天一行家底目录、自主闹钟
 node test/client-smoke.mjs   # Client 工厂、locale 字典、shell.overlay 注册（stub React/Cordis）
 node test/session-inspect.mjs <session.v4.jsonl.zstd>   # 从会话日志确认注入
 node test/db-inspect.mjs <memory.db>                    # 只读查看 SQLite 表
