@@ -44,7 +44,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.2.1';
+const BUILD = 'bionic-1.2.2';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -349,12 +349,17 @@ export function apply(ctx, rawConfig) {
           ? sessions?.get?.(agentOrSession.id)
           : agentOrSession;
       if (!session) return false;
-      // The session header stores the preset used at creation. A preset chosen
-      // before the first turn is committed as an `agent-preset/selected` event
-      // and is the effective composition; the header stays "standard". Always
-      // consult the committed selection first, with the header as a fast path.
-      if (session.header?.agentPreset === config.presetId) return true;
+      // The session header stores the preset used at creation. A later
+      // `agent-preset/selected` event is the effective composition; it wins
+      // even when the immutable header still says bionic-memory or standard.
       const presets = agentPresets || ctx.get?.('agentPresets');
+      try {
+        const current = presets?.presetForSession?.(session);
+        if (current !== undefined && current !== null) return current === config.presetId;
+      } catch {
+        /* fall back to the header */
+      }
+      if (session.header?.agentPreset === config.presetId) return true;
       try {
         if (presets?.presetForSession?.(session) === config.presetId) return true;
       } catch {

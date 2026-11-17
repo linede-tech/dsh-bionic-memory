@@ -151,4 +151,4 @@ node test/client-smoke.mjs
 
 ## 版本
 
-当前 `1.2.1`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。
+当前 `1.2.2`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。

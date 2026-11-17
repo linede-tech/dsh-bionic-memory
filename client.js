@@ -1447,8 +1447,21 @@ window.__ModuleLoader__.load({
           let loading = false;
           let scheduled = false;
 
+          const activeConversation = () => {
+            const elements = Array.from(document.querySelectorAll('[data-conversation-session]'));
+            return (
+              elements.find((el) => {
+                if (!el.isConnected) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === 'none' || style.visibility === 'hidden') return false;
+                const rect = el.getClientRects()[0];
+                return Boolean(rect && rect.width > 0 && rect.height > 0);
+              }) || null
+            );
+          };
+
           const currentSession = () => {
-            const el = document.querySelector('[data-conversation-session]');
+            const el = activeConversation();
             return el ? String(el.getAttribute('data-conversation-session') || '') : '';
           };
 
@@ -1462,11 +1475,12 @@ window.__ModuleLoader__.load({
 
           const decorate = () => {
             const sid = currentSession();
-            if (!identity || !sid || identitySession !== sid) {
+            const root = activeConversation();
+            if (!identity || !root || !sid || identitySession !== sid) {
               removeDecorations();
               return;
             }
-            for (const row of document.querySelectorAll('[data-chat-flow-kind="assistant-step"]')) {
+            for (const row of root.querySelectorAll('[data-chat-flow-kind="assistant-step"]')) {
               if (row.closest('[data-step-process-body]')) continue;
               let holder = row.querySelector(`:scope > [${HOLDER_ATTR}]`);
               if (!holder) {
@@ -1560,7 +1574,12 @@ window.__ModuleLoader__.load({
           };
 
           const observer = new MutationObserver(scheduleDecorate);
-          observer.observe(document.body, { childList: true, subtree: true });
+          observer.observe(document.body, {
+            childList: true,
+            subtree: true,
+            attributes: true,
+            attributeFilter: ['data-conversation-session', 'style', 'class', 'hidden'],
+          });
           refresh();
           const timer = window.setInterval(refresh, 5000);
           return () => {
