@@ -44,7 +44,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.2.2';
+const BUILD = 'bionic-1.2.3';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -81,6 +81,7 @@ export function apply(ctx, rawConfig) {
   const proactiveRuns = new Map();
   const AUTONOMOUS_MARKER = '[bionic-autonomous-tick:';
   let modeEngaged = false;
+  const presetSuspended = new Set();
 
   // ------------------------------------------------------------ data directory
 
@@ -342,6 +343,8 @@ export function apply(ctx, rawConfig) {
   }
 
   function isActiveFor(agentOrSession) {
+    const suspendedId = agentOrSession?.id;
+    if (suspendedId !== undefined && presetSuspended.has(String(suspendedId))) return false;
     if (config.activation === 'all') return true;
     try {
       const session =
@@ -349,10 +352,22 @@ export function apply(ctx, rawConfig) {
           ? sessions?.get?.(agentOrSession.id)
           : agentOrSession;
       if (!session) return false;
+      // A live Agent knows its actual composition. This is the strongest
+      // signal: a session that selected bionic and then switched to Creator
+      // before its first message is composed as Creator even if the session
+      // header or the last committed selection still says bionic.
+      const presets = agentPresets || ctx.get?.('agentPresets');
+      try {
+        const composed = agentOrSession?.ctx
+          ? presets?.composedPreset?.(agentOrSession.ctx)
+          : undefined;
+        if (composed !== undefined && composed !== null) return composed === config.presetId;
+      } catch {
+        /* composition may be unavailable during teardown */
+      }
       // The session header stores the preset used at creation. A later
       // `agent-preset/selected` event is the effective composition; it wins
       // even when the immutable header still says bionic-memory or standard.
-      const presets = agentPresets || ctx.get?.('agentPresets');
       try {
         const current = presets?.presetForSession?.(session);
         if (current !== undefined && current !== null) return current === config.presetId;
@@ -529,7 +544,25 @@ export function apply(ctx, rawConfig) {
   ctx.effect(() => {
     if (typeof ctx.on !== 'function') return () => {};
     const off = ctx.on('agent-preset/selected', (sessionId, agentPreset) => {
-      if (agentPreset !== config.presetId) return;
+      const sid = String(sessionId);
+      if (agentPreset !== config.presetId) {
+        // A session that once selected bionic must stop injecting the moment
+        // the user switches away, even before its first message and even when
+        // the immutable header or stale composition still says bionic.
+        presetSuspended.add(sid);
+        try {
+          const agent = ctx.agents.list().find((candidate) => String(candidate.id) === sid);
+          const dispose = agentDisposers.get(agent?.id || sid);
+          if (dispose) {
+            dispose();
+            agentDisposers.delete(agent?.id || sid);
+          }
+        } catch (error) {
+          logger?.debug?.(`[bionic-memory] preset-suspend cleanup skipped: ${error?.message || error}`);
+        }
+        return;
+      }
+      presetSuspended.delete(sid);
       modeEngaged = true;
       try {
         const agent = ctx.agents.list().find((candidate) => String(candidate.id) === String(sessionId));
