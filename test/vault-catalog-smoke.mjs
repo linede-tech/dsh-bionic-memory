@@ -11,6 +11,7 @@ import { fileURLToPath } from 'node:url';
 
 import { MemoryCatalog } from '../lib/catalog.js';
 import { MySchedule } from '../lib/schedule.js';
+import { writeDream } from '../lib/soul-storage.js';
 import { openStore } from '../lib/store.js';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -78,15 +79,57 @@ async function main() {
     journal: true,
   });
   catalog.recordDay({ day: '2026-11-19', status: '正常', anchor: '修插件 / 测试', turns: 4, impressions: 2, journal: false });
+  catalog.recordBackfill({ day: '2026-11-18', anchor: '原话冷库 / 目录补齐', turns: 3 });
+  catalog.recordBlank({ day: '2026-11-16' });
   const lines = catalog.recent(30);
-  check(lines.length >= 3, 'catalog fills the missing middle day', lines.length);
-  check(lines.some((line) => line.startsWith('- 2026-11-18 [空白]')), 'intervening day is written as [空白]');
-  check(lines.every((line) => /^- \d{4}-\d{2}-\d{2} \[(正常|空白|高光|异常残缺)\]/.test(line)), 'every line follows the catalog format');
-  check(lines.every((line) => line.includes('对话:') && line.includes('印象:') && line.includes('日记:')), 'every line carries the counters');
+  check(lines.length >= 4, 'catalog keeps explicit backfill and blank lines', lines.length);
+  check(lines.some((line) => line.startsWith('- 2026-11-18 [已聊/未眠补录]')), 'vault day without sleep is backfilled');
+  check(lines.some((line) => line.startsWith('- 2026-11-16 [空白]')), 'truly empty day is written as [空白]');
+  check(lines.every((line) => /^- \d{4}-\d{2}-\d{2} \[(正常|空白|高光|异常残缺|已聊\/未眠补录)\]/.test(line)), 'every line follows the catalog format');
+  check(
+    lines.every(
+      (line) =>
+        (line.includes('对话:') && (line.includes('印象:') || line.includes('睡眠:未触发'))) ||
+        line.includes('(当天无交互)'),
+    ),
+    'every line carries its day counters',
+  );
   const anchor = lines[0].match(/\] (.*?) \(对话:/)?.[1] || '';
   check(anchor.length <= 35, 'core anchor is <= 35 chars', anchor);
   const block = catalog.block(90);
   check(block.startsWith('<my_memory_catalog>') && block.endsWith('</my_memory_catalog>'), 'catalog block is wrapped for Tier 1');
+
+  const firstDream = writeDream(DATA, {
+    id: 'dream-test-a',
+    started_at: Date.UTC(2026, 10, 17, 2, 0, 0),
+    ended_at: Date.UTC(2026, 10, 17, 2, 10, 0),
+    trigger: 'manual',
+    narrative: '第一场梦。',
+    afterglow: '一点余韵。',
+  });
+  const secondDream = writeDream(DATA, {
+    id: 'dream-test-b',
+    started_at: Date.UTC(2026, 10, 17, 3, 0, 0),
+    ended_at: Date.UTC(2026, 10, 17, 3, 10, 0),
+    trigger: 'manual',
+    narrative: '第二场梦。',
+    afterglow: '另一点余韵。',
+  });
+  const rewritten = writeDream(DATA, {
+    id: 'dream-test-a',
+    started_at: Date.UTC(2026, 10, 17, 2, 0, 0),
+    ended_at: Date.UTC(2026, 10, 17, 2, 10, 0),
+    trigger: 'manual',
+    narrative: '第一场梦（重写）。',
+    afterglow: '一点余韵。',
+  });
+  check(path.basename(firstDream) === '2026-11-17_#01.md', 'first dream uses #01');
+  check(path.basename(secondDream) === '2026-11-17_#02.md', 'second dream does not overwrite #01');
+  check(path.basename(rewritten) === '2026-11-17_#01.md', 'the same dream id updates its own file, not a new one');
+  check(
+    fs.readFileSync(secondDream, 'utf8').includes('第二场梦'),
+    'the earlier dream survives the second one',
+  );
 
   const schedule = new MySchedule({ dataDir: DATA, clock: () => Date.UTC(2026, 10, 17, 9, 0, 0) });
   schedule.init();

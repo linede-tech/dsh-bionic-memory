@@ -113,15 +113,19 @@ async function sourceAndDream() {
         source_type: 'agent_inferred',
       });
       check(store.getEpisode(stated.episode_id)?.source_type === 'user_stated', 'user turn stored as user_stated');
-      check(store.getEpisode(inferred.episode_id)?.source_type === 'agent_inferred', 'explicit inference stored as agent_inferred');
+      check(store.getHypothesis(inferred.episode_id)?.id === inferred.episode_id, 'explicit inference stored in agent_hypotheses');
+      check(!store.getEpisode(inferred.episode_id), 'inferred hypothesis is absent from the fact pool');
 
       const beforeConfirm = engine.renderContext({ session_id: 's1' });
       check(beforeConfirm.includes('[用户亲述]'), 'context labels user-stated memory');
-      check(beforeConfirm.includes('[我的推测·未证实]'), 'context labels inferred memory');
+      check(!beforeConfirm.includes('[我的推测·未证实]'), 'inferred hypotheses are excluded from default context');
+      const hypotheses = engine.checkHypotheses('键盘 猫');
+      check(hypotheses.count >= 1, 'check_my_hypotheses can review the hypothesis pool', hypotheses.count);
 
       const confirmed = engine.confirmMemory(inferred.episode_id);
       check(confirmed.ok === true, 'confirm action accepted');
-      check(store.getEpisode(inferred.episode_id)?.source_type === 'user_stated', 'confirmation upgraded the inferred memory');
+      check(store.getEpisode(confirmed.id)?.source_type === 'user_stated', 'confirmation promotes the hypothesis into the fact pool');
+      check(!store.getHypothesis(inferred.episode_id), 'promoted hypothesis leaves the hypothesis pool');
 
       const dream = await engine.dream({ trigger: 'manual' });
       check(dream.ok === true, 'dream completed');
@@ -275,13 +279,28 @@ async function crossSessionAndReconsolidation() {
         user_text: '今天有点低落，灯塔的事让我想起一些遗憾。',
         assistant_text: '我陪你待一会儿。',
       });
-      const after = store.getEpisode(old.episode_id);
+      const afterPassive = store.getEpisode(old.episode_id);
       check(Boolean(before), 'old episode exists');
-      check(String(after?.emotion_tone || '').includes('再巩固为'), 'retrieved memory was reconsolidated with the turn tone', {
-        before: before?.emotion_tone,
-        after: after?.emotion_tone,
+      check((afterPassive?.t_last || 0) === (before?.t_last || 0), 'passive recall does not refresh t_last');
+      check(!String(afterPassive?.emotion_tone || '').includes('再巩固为'), 'passive recall does not reconsolidate');
+
+      advance(60 * 1000);
+      messageRef.value = '灯塔';
+      engine.renderContext({ session_id: 's1' });
+      messageRef.value = '';
+      await engine.ingestTurn({
+        session_id: 's1',
+        turn: 4,
+        user_text: '灯塔那天风很大。',
+        assistant_text: '灯塔那天风很大，但你当时很开心。',
       });
-      check((after?.t_last || 0) > (before?.t_last || 0), 'reconsolidation refreshed t_last');
+      const after = store.getEpisode(old.episode_id);
+      check(Number(after?.k || 0) > Number(before?.k || 0), 'explicit mention increments the memory k', {
+        before: before?.k,
+        after: after?.k,
+      });
+      check((after?.t_last || 0) > (before?.t_last || 0), 'explicit mention refreshes t_last');
+      check(Boolean(after?.last_reconsolidated_at), 'reconsolidation stamps the 24h cooldown');
     },
   );
 }

@@ -43,7 +43,7 @@ const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.0.0';
+const BUILD = 'bionic-1.1.0';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -1663,6 +1663,40 @@ export function apply(ctx, rawConfig) {
     },
   });
 
+  const hypothesesDisposer = ctx.tools.register({
+    name: 'check_my_hypotheses',
+    description:
+      'Review your own past guesses, available only in the Bionic Memory Mode. These are agent_inferred hypotheses, not user-stated facts. Use only when you want to recall "what did I guess about this before"; never present them as events that happened.',
+    parameters: {
+      type: 'object',
+      properties: {
+        keyword: { type: 'string', description: 'Keyword or phrase from the old guess.' },
+      },
+    },
+    output: {
+      schema: { type: 'object', properties: { success: { type: 'boolean' } }, additionalProperties: true },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里查看推测池。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      try {
+        return { success: true, ...current.checkHypotheses(String(args?.keyword || ''), 10) };
+      } catch (error) {
+        return { success: false, error: `查看推测池失败：${error?.message || error}` };
+      }
+    },
+  });
+
   ctx.effect(
     () => () => {
       try {
@@ -1687,6 +1721,11 @@ export function apply(ctx, rawConfig) {
       }
       try {
         scheduleDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        hypothesesDisposer();
       } catch {
         /* ignore */
       }

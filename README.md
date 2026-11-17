@@ -37,7 +37,7 @@
   soul/scratchpad.json
   soul/emergent_voice.json
   soul/procedural_skills.md
-  soul/dreams/YYYY-MM-DD.md
+  soul/dreams/YYYY-MM-DD_#01.md   每次做梦独立编号
   soul/journal/identity_preface.md
   soul/journal/active/
   soul/journal/chapters/
@@ -70,7 +70,7 @@
 │   ├── scratchpad.json            Layer 1 潜意识白板
 │   ├── emergent_voice.json        自然语感养成档案
 │   ├── procedural_skills.md       Layer 4 核心本能
-│   ├── dreams/YYYY-MM-DD.md       每日梦境日记
+│   ├── dreams/YYYY-MM-DD_#01.md   每次做梦独立编号，不覆盖旧梦
 │   └── journal/                   生命日记
 │       ├── identity_preface.md    <=300 字的自我生命序言（Tier 1 唯一日记文本）
 │       ├── active/                <=15 篇活跃散页
@@ -198,6 +198,7 @@ soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的�
 原始对话不再随艾宾浩斯衰减被物理销毁：
 
 - 每次入库把 user / assistant 的原话写入 `cortex/memory_cortex.sqlite` 的 FTS5 表 `verbatim_vault`（`session_id`, `timestamp`, `speaker`, `exact_text`, `topic_tags`，另带 `episode_id` / `turn`）；
+- `episodic_memories` 不再重复存全文：`level_0_raw` 改为 `vault_ids_ref` 外键数组，高清记忆通过 `vault_id` 关联；
 - 情景记忆衰减到 `level_1_summary` / `level_2_impression` 时，`level_0_raw` 从常规向量召回池移除，但原话已在冷库中永久保留；
 - 平时上下文仍然只有模糊印象。用户问“你当时原话怎么说的”、聊到某天细节，或她自己想较真时调用：
 
@@ -216,7 +217,8 @@ soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的�
 ```
 
 - 核心锚点 <=35 字；
-- 完全没交互的日子写 `[空白]`；系统报错/断连写 `[异常残缺]`；
+- 完全没交互的日子写 `[空白] (当天无交互)`；系统报错/断连写 `[异常残缺]`；
+- 错过睡眠但有原话记录的日子，跨日回溯补写 `[已聊/未眠补录] ... (对话:X轮 | 睡眠:未触发)`，不会误标成空白；
 - 最近 90 行编译进 Tier 1 的 `<my_memory_catalog>`，全天走 KV Cache；
 - 按味道没捞到某段记忆时，先核对目录：`[空白]` 就是真没聊，有记录却没捞到就用 `dig_up_exact_words` 按日期翻旧账。
 
@@ -249,6 +251,34 @@ soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的�
 | `dig_up_exact_words` | FTS5 原话冷库，按关键词 + 日期 + 前后轮数精准翻旧账 |
 | `set_my_own_schedule` | 自己定闹钟：silent_task / proactive_message / go_to_sleep |
 
+## 1.1.0 五项架构修复
+
+1. **推测池与事实池物理隔离**
+   - `agent_inferred` 从 `episodes` / `episodic_memories` 迁入独立表 `agent_hypotheses`；
+   - 默认 Context Assembler 只召回 `source_type = 'user_stated'`，`<recalled_memories>` 不再混入 AI 旧推测；
+   - 新工具 `check_my_hypotheses` 仅按需查看推测池；确认后才转正为事实。
+
+2. **家底目录跨日回溯补齐**
+   - 每次 `/dream` 和引擎启动都会从目录最后一天游标扫到今天；
+   - 有原话记录但没做梦的天：`[已聊/未眠补录] ... (对话:X轮 | 睡眠:未触发)`；
+   - 真没交互的天：`[空白] (当天无交互)`；
+   - 历史目录在启动时立即补扫，不再因为漏梦而缺天。
+
+3. **梦境文件序号化**
+   - `soul/dreams/YYYY-MM-DD_#01.md`、`_#02.md`……；
+   - 同一 `dream_id` 只更新自己的文件，不同梦永不互相覆盖。
+
+4. **单一原话源 + ID 指针**
+   - 全文只存 `verbatim_vault`；`episodic_memories` 用 `vault_ids_ref` 指针；
+   - 流水日志每轮只写 `[ref: vault_id] <25字摘要>`，不再重复全文；
+   - 迁移脚本：`node scripts/compress-journal.mjs --apply`
+     （默认对 `~/.dsh/bionic-soul/cortex/memory_cortex.sqlite` 执行，`--db` 可指定）。
+
+5. **再巩固门槛收紧**
+   - 仅被放进候选上下文不会更新 `t_last` / `k`；
+   - 只有本轮最终输出显式提到（关键词 + 语义重合）或 `dig_up_exact_words` 工具调阅，才触发再巩固；
+   - 每轮最多 1-2 条，单条 24 小时内最多 1 次（`last_reconsolidated_at`）。
+
 ## 四层记忆
 
 1. **潜意识白板**：情绪基调（valence / arousal）、今日梦境余韵、未解决的好奇钩子。
@@ -258,7 +288,7 @@ soul/journal/cold_archive/   被装订的 10 篇散页，以及超出 12 章的�
 
 ## 六项高阶仿生机制
 
-1. **来源防伪**：每条情景记忆带 `source_type`：`user_stated` / `agent_inferred` / `dream_generated`。上下文分别标注 `[用户亲述]`、`[我的推测·未证实]`、`[梦境生成·不可当作事实]`；折叠出的习惯按成员来源继承。梦境从未被写成事实，也不能被 `confirm` 升级。旧库迁移时默认 `agent_inferred`，确认后用 `bionic_memory { action: "confirm", target: "<id>" }` 升级。
+1. **来源防伪**：每条情景记忆带 `source_type`：`user_stated` / `agent_inferred` / `dream_generated`。上下文分别标注 `[用户亲述]`、`[我的推测·未证实]`、`[梦境生成·不可当作事实]`；折叠出的习惯按成员来源继承。梦境从未被写成事实，也不能被 `confirm` 升级。`agent_inferred` 现在进入独立 `agent_hypotheses` 推测池，默认召回只包含 `user_stated`；确认后用 `bionic_memory { action: "confirm", target: "<id>" }` 把推测转正成事实。旧库迁移时默认 `agent_inferred`。
 2. **认知失调**：新输入与 `stability_score > 0.8` 的活跃习惯同主题且含明确否定/改变标记时，不走习惯化丢弃；强制 `N = 2.0` 入库，把旧习惯降级为 `historical`，写入关怀钩子并记录 `contradicted_by` 边。
 3. **本能容量上限**：`procedural_skills` 最多注入 20 条。NREM 执行相近本能合并、长期未触发本能归档（`active = 0`，回到普通图谱）以及超出 20 条的末位淘汰；归档本能在监视器里单独列出。
 4. **多窗口分身感知**：每次入库更新该 Session 的一句话任务摘要（`session_notes`）。构建上下文时，从 `sessions.list()` 找出其他活跃窗口，注入极简 `<parallel_sessions>`；当前窗口不重复列出，摘要明确标注“仅作并行感知，可能不完整”。
