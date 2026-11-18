@@ -8,10 +8,10 @@
 ~/.dsh/bionic-soul/
 ```
 
-Windows 当前机器上是：
+Windows 示例路径：
 
 ```text
-C:\Users\unity\.dsh\bionic-soul\
+C:\Users\<you>\.dsh\bionic-soul\
 ```
 
 记忆只在「永续记忆模式」会话里读写；所有工作区、所有模式会话共享这一个全局目录。标准会话不会被初始化或注入记忆。
@@ -114,7 +114,7 @@ C:\Users\unity\.dsh\bionic-soul\
 
 `1.3.1` 起**移除了启动时的自动迁移**。项目升级不会读取、复制或改写旧 workspace-local 数据；当前全局目录是唯一运行数据源。
 
-当前机器已经完成过历史迁移：全局 `cortex` 中有 40 条情景、3 条本能、2 场梦、11 条边；旧 workspace-local 目录、旧 profile 目录、profile 指针和 `.migrated-from` 均已删除。
+历史迁移已不再自动执行；如果本地曾经完成过迁移，那是旧版本的一次性行为。项目仓库不包含任何真实记忆数据，`samples/` 下全部是虚构样例。
 
 如果以后确实需要导入旧数据，请先备份全局目录，再手动复制或编写显式迁移脚本，不要让正常启动自动执行。
 
@@ -125,14 +125,14 @@ C:\Users\unity\.dsh\bionic-soul\
 - 在本地 `cordis.patch.yml` 给 `bionic-memory` 行配置绝对 `dataDir`；
 - 不要把个人绝对路径提交到公开仓库。
 
-profile 指针和 `BIONIC_MEMORY_DATA_DIR` 不再决定日常运行目录，只用于一次性旧数据迁移。当前机器已经删除旧指针，日常直接使用全局目录。
+profile 指针和 `BIONIC_MEMORY_DATA_DIR` 不再决定日常运行目录，也不再自动迁移。日常直接使用全局目录。
 
 ## 6. 重置与备份
 
 不要直接删除全局目录。推荐：
 
 ```powershell
-Rename-Item "C:\Users\unity\.dsh\bionic-soul" "bionic-soul.backup-$(Get-Date -Format yyyyMMdd-HHmmss)"
+Rename-Item "$HOME\.dsh\bionic-soul" "bionic-soul.backup-$(Get-Date -Format yyyyMMdd-HHmmss)"
 ```
 
 下次进入永续记忆模式时插件会重新创建空的全局目录。需要恢复时，把备份目录改回 `bionic-soul` 并重启。

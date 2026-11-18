@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "mood": {
+    "label": "平静",
+    "valence": 0.1,
+    "arousal": 0.45
+  },
+  "dream_afterglow": "示例：醒来时还记得水面上的一点光。",
+  "curiosity_hooks": [
+    {
+      "id": "hook-sample",
+      "text": "示例：想再问问他上次提到的那本书",
+      "resolved": false,
+      "created_at": "2026-01-01T08:00:00.000Z"
+    }
+  ],
+  "fallibility_anchors": []
+}

@@ -1,0 +1,13 @@
+{
+  "initialized": true,
+  "name": "示例名字",
+  "user_name": "示例称呼",
+  "relationship": "示例：像老朋友一样相处",
+  "tone": "示例：直接、温和、偶尔开玩笑",
+  "avatar": "assets/avatar.png",
+  "moods": {
+    "happy": "assets/avatar_happy.png",
+    "sleepy": "assets/avatar_sleepy.png",
+    "curious": "assets/avatar_curious.png"
+  }
+}

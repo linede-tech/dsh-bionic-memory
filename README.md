@@ -83,9 +83,12 @@ plugin_manager install_bundle <本目录>
 | 位置 | 内容 | 是否在项目仓库 |
 |---|---|---|
 | `dsh-bionic-memory/` | 代码、预设声明、默认资源、文档、测试 | 是 |
+| `dsh-bionic-memory/samples/` | **虚构样例数据**，只供参考，不会被插件加载 | 是 |
 | `~/.dsh/bionic-soul/` | 记忆库、日记、梦境、原话、config、头像 | 否 |
 | `~/.dsh/sessions/` | 会话日志 | 否 |
 | `dsh-bionic-memory/test/*` | 临时测试目录，运行后清理 | 否（临时） |
+
+> `samples/` 全部是虚构样例；项目仓库不包含任何真实记忆、日记、头像或会话数据。
 
 从 `1.3.1` 起，启动阶段对**已存在的本地数据只读**：
 
@@ -97,7 +100,7 @@ plugin_manager install_bundle <本目录>
 
 > 历史说明：`1.3.0` 安装时曾自动迁移过旧的 `config.json` 与 Tier 0；`1.3.1` 已移除这类启动写入。已发生的迁移不会自动回滚，需要恢复请明确确认。
 
-开发或测试时请让 `dataDir` 指向临时目录，不要指向 `~/.dsh/bionic-soul`；仓库里的 `test/` 只使用临时目录。
+开发或测试时请让 `dataDir` 指向临时目录，不要指向 `~/.dsh/bionic-soul`；仓库里的 `test/` 只使用临时目录。`samples/` 是虚构样例，插件不会扫描或加载它。
 
 ## 核心机制
 
@@ -216,4 +219,4 @@ node test/client-smoke.mjs
 
 ## 版本
 
-当前 `1.3.1`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。
+当前 `1.3.2`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。

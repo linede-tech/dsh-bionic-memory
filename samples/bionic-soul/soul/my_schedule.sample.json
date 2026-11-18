@@ -1,0 +1,11 @@
+{
+  "entries": [
+    {
+      "id": "alarm-sample",
+      "action_type": "proactive_message",
+      "wake_at": 1790000000000,
+      "my_intention": "示例：忽然想起一件小事，想跟他说一声。",
+      "status": "pending"
+    }
+  ]
+}
