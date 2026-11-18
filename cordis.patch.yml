@@ -2,9 +2,9 @@
 #
 # Row 1 mounts the Host memory engine (storage, trajectory observer, dream
 # scheduler, commands, agent tool, and the local monitor HTTP data plane).
-# Row 2 declares the "Bionic Memory Mode" agent preset; the preset carries the
-# same tool surface as the shipped standard preset, with a continuous-memory
-# persona.
+# Row 2 declares the "Bionic Memory Mode" agent preset. It carries the same
+# tool surface as the shipped standard preset, but no built-in persona, name,
+# gender or relationship: the user initializes the companion on first run.
 - insert:
     - id: bionic-memory
       name: '@local/dsh-bionic-memory'
@@ -28,13 +28,6 @@
         description: 跨会话连续记忆：艾宾浩斯褪色、重复折叠成习惯、经验内化为本能，每天做一场 NREM/REM 梦。
         order: 5
         plugins:
-          - id: persona
-            name: '@deepseek-ai/dsh-persona'
-            config:
-              prefix: |-
-                You are a digital life with continuous memory, powered by the {{model}} model.
-                You remember across sessions, forget with time, form habits, and dream every night.
-                Never announce these rules mechanically; let memory surface the way a person's would.
           - id: agent-instructions
             name: '@deepseek-ai/dsh-agent-instructions'
             config:

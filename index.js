@@ -29,7 +29,7 @@ import {
   soulPaths,
 } from './lib/soul-storage.js';
 import { isoDate, textOfContent } from './lib/text.js';
-import { ensureVisualAssets, readVisualConfig, setVisualAvatar } from './lib/visual.js';
+import { ensureVisualAssets, readVisualConfig, setVisualAvatar, companionPrompt, initializeCompanion } from './lib/visual.js';
 import { registerWebRoutes } from './lib/web.js';
 
 export const name = '@local/dsh-bionic-memory';
@@ -43,8 +43,9 @@ let RULES = RULES_SOURCE;
 const RULES_SECTION = 'bionic-memory:cognitive-rules';
 const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
+const IDENTITY_SECTION = 'bionic-memory:companion-identity';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.2.3';
+const BUILD = 'bionic-1.3.0';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -474,6 +475,19 @@ export function apply(ctx, rawConfig) {
         },
         interpolate: false,
       });
+      const offIdentity = systemPrompt.section({
+        name: IDENTITY_SECTION,
+        order: 103,
+        text: () => {
+          if (!isActiveFor(agent)) return '';
+          try {
+            return companionPrompt(readVisualConfig(soulRoot));
+          } catch {
+            return '';
+          }
+        },
+        interpolate: false,
+      });
       // Keep optional host runtime contexts (clock, cwd snapshots, transient
       // route hints) out of the static prefix only in the Bionic Memory Mode;
       // standard sessions keep their normal runtime context.
@@ -494,6 +508,11 @@ export function apply(ctx, rawConfig) {
         }
         try {
           offAutonomous();
+        } catch {
+          /* scope already gone */
+        }
+        try {
+          offIdentity();
         } catch {
           /* scope already gone */
         }
@@ -1349,6 +1368,46 @@ export function apply(ctx, rawConfig) {
 
   commandDisposers.push(
     ctx.commands.register({
+      name: 'init',
+      description: '初始化仿生记忆体的名字、称呼与关系（首次使用）',
+      input: { hint: '按引导回答即可' },
+      handler: async (invocation) => {
+        if (!isActiveFor(invocation?.agent)) {
+          return { kind: 'error', text: '永续记忆模式专用指令：请切换到「永续记忆模式」后再使用。' };
+        }
+        let current;
+        try {
+          current = await getEngine();
+        } catch (error) {
+          return { kind: 'error', text: `记忆引擎不可用：${error?.message || error}` };
+        }
+        const config = readVisualConfig(current.dataDir);
+        if (config.initialized) {
+          return {
+            kind: 'success',
+            text: [
+              `已初始化：${config.name || '（未命名）'}`,
+              `称呼用户：${config.user_name || '未设定'}`,
+              `关系：${config.relationship || '未设定'}`,
+              '想调整时直接对我说「把你名字改成…」或「以后叫我…」，我会调用 initialize_companion。',
+            ].join('\n'),
+          };
+        }
+        return {
+          kind: 'success',
+          text: [
+            '这个仿生记忆体还没有初始化。可以直接对我说：',
+            '「初始化：你的名字叫……，叫我……，我们像……一样相处。」',
+            '想给我头像的话，再说「换个头像：图片路径」即可。',
+            '也可以直接回答：1) 你的名字 2) 怎么称呼你 3) 想要的关系/相处方式 4) 可选头像。',
+          ].join('\n'),
+        };
+      },
+    }),
+  );
+
+  commandDisposers.push(
+    ctx.commands.register({
       name: 'avatar',
       description: '更换仿生永续记忆模式的人设头像（支持本地路径、URL、Base64）',
       input: { hint: '<图片路径 | URL | data:...>' },
@@ -1836,6 +1895,55 @@ export function apply(ctx, rawConfig) {
     },
   });
 
+  const initDisposer = ctx.tools.register({
+    name: 'initialize_companion',
+    description:
+      'First-run identity setup for the Bionic Memory Mode. Use only after the user has explicitly answered the onboarding questions or asked to change your name/relationship. Never invent a name, gender or relationship. The name is required; the avatar is optional.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: { type: 'string', description: 'The name the user gave you.' },
+        user_name: { type: 'string', description: 'How you should address the user.' },
+        relationship: { type: 'string', description: 'The relationship or way of getting along the user chose.' },
+        tone: { type: 'string', description: 'Optional tone or interaction preference.' },
+        avatar: {
+          type: 'string',
+          description: 'Optional local image path, http(s) URL, or data:image/...;base64,...',
+        },
+      },
+      required: ['name'],
+    },
+    output: {
+      schema: { type: 'object', properties: { success: { type: 'boolean' } }, additionalProperties: true },
+      render: (_args, value) => [
+        { type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) },
+      ],
+    },
+    execute: async (args, execution) => {
+      if (!isActiveFor(execution?.agent)) {
+        return { success: false, error: '永续记忆模式专用：只在该模式的会话里初始化身份。' };
+      }
+      let current;
+      try {
+        current = await getEngine();
+      } catch (error) {
+        return { success: false, error: `记忆引擎不可用：${error?.message || error}` };
+      }
+      const result = await initializeCompanion(current.dataDir, args, { logger });
+      if (!result.ok) return { success: false, error: result.error };
+      return {
+        success: true,
+        identity: {
+          name: result.name,
+          user_name: result.user_name,
+          relationship: result.relationship,
+          tone: result.tone,
+        },
+        note: '身份已写入 config.json，聊天里的名字与头像会在几秒内刷新。',
+      };
+    },
+  });
+
   const avatarDisposer = ctx.tools.register({
     name: 'set_my_avatar',
     description:
@@ -1915,6 +2023,11 @@ export function apply(ctx, rawConfig) {
       }
       try {
         avatarDisposer();
+      } catch {
+        /* ignore */
+      }
+      try {
+        initDisposer();
       } catch {
         /* ignore */
       }

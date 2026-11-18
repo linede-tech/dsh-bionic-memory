@@ -10,8 +10,10 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  companionPrompt,
   ensureVisualAssets,
   identityFor,
+  initializeCompanion,
   moodFromState,
   readVisualConfig,
   setVisualAvatar,
@@ -37,12 +39,15 @@ async function main() {
   check(fs.existsSync(paths.avatar), 'default avatar.png is created');
   check(fs.existsSync(paths.config), 'config.json is created');
   const config = readVisualConfig(DATA);
-  check(config.name === '小溯', 'default display name is 小溯');
+  check(config.initialized === false, 'default identity is not initialized');
+  check(config.name === '', 'default display name is empty (no preset role)');
   check(config.avatar === 'assets/avatar.png', 'default avatar path is assets/avatar.png');
+  check(companionPrompt(config).includes('<companion_setup>'), 'uninitialized prompt contains first-run setup');
 
   const calm = identityFor(DATA, { scratchpad: { mood: { label: '平静', valence: 0.1, arousal: 0.5 } } });
   check(calm.enabled === true, 'identity is enabled');
-  check(calm.name === '小溯', 'identity carries the display name');
+  check(calm.initialized === false, 'identity reports uninitialized');
+  check(calm.name === '', 'identity has no preset display name');
   check(String(calm.avatar).startsWith('data:image/png;base64,'), 'main avatar resolves to a PNG data URI');
   check(calm.mood === 'calm' && calm.glow === 'calm', 'calm mood/glow is selected');
 
@@ -57,17 +62,41 @@ async function main() {
   check(Boolean(happy.moods.happy), 'mood-specific avatar file is discovered');
   check(String(happy.moods.happy).startsWith('data:image/png;base64,'), 'mood avatar resolves to a data URI');
 
+  const initialized = await initializeCompanion(DATA, {
+    name: '阿溯',
+    user_name: '阿岚',
+    relationship: '搭档',
+    tone: '温和、直接',
+  });
+  check(initialized.ok === true, 'initializeCompanion succeeds with a user-provided name');
+  const afterInit = readVisualConfig(DATA);
+  check(afterInit.initialized === true, 'initialized flag is persisted');
+  check(afterInit.name === '阿溯', 'user-provided name is persisted');
+  check(afterInit.user_name === '阿岚', 'user-provided form of address is persisted');
+  check(afterInit.relationship === '搭档', 'user-provided relationship is persisted');
+  const initializedIdentity = identityFor(DATA, { scratchpad: {} });
+  check(initializedIdentity.name === '阿溯', 'identity now carries the initialized name');
+  check(companionPrompt(afterInit).includes('<companion_identity>'), 'initialized prompt contains identity block');
+
   const replaced = await setVisualAvatar(DATA, PIXEL, { name: '阿溯' });
   check(replaced.ok === true, 'setVisualAvatar accepts a data URI');
-  check(replaced.name === '阿溯', 'setVisualAvatar updates the display name');
   const after = readVisualConfig(DATA);
-  check(after.name === '阿溯', 'new name is persisted');
+  check(after.name === '阿溯', 'name remains after avatar replacement');
   check(after.avatar === 'assets/avatar.png', 'new avatar path is persisted');
   check(fs.statSync(path.join(DATA, 'assets', 'avatar.png')).size > 0, 'new avatar bytes are written');
   check(fs.readdirSync(path.join(DATA, 'assets')).some((name) => name.startsWith('avatar.previous-')), 'previous avatar is backed up');
 
   const missing = await setVisualAvatar(DATA, path.join(DATA, 'nope.png'));
   check(missing.ok === false, 'missing local image is rejected');
+
+  // A config from the preset-role era must not leak its old name back in.
+  fs.writeFileSync(
+    path.join(DATA, 'config.json'),
+    JSON.stringify({ name: '小溯', avatar: 'assets/avatar.png', moods: {} }),
+    'utf8',
+  );
+  const legacy = readVisualConfig(DATA);
+  check(legacy.initialized === false && legacy.name === '', 'legacy preset name is migrated to uninitialized/empty');
 
   fs.rmSync(DATA, { recursive: true, force: true });
   if (failures) {

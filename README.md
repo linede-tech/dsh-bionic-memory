@@ -20,6 +20,40 @@ plugin_manager install_bundle <本目录>
 
 `composed: true` 且 `leakedServices: []` 即可用。
 
+## 首次初始化（没有预设角色）
+
+这个项目**不内置名字、性别、头像、关系或人格**。没有“小溯”这类默认角色，也没有预设的“她/他”身份。
+
+第一次进入「永续记忆模式」并说话时，模型会通过 `<companion_setup>` 引导用户回答：
+
+1. 你想给我起什么名字？
+2. 你希望我怎么称呼你？
+3. 你希望我们是什么关系、用什么方式相处？
+4. （可选）要不要给我一张头像？
+
+也可以直接说：
+
+```text
+初始化：你的名字叫「……」，叫我「……」，我们像……一样相处。
+```
+
+模型会调用 `initialize_companion` 写入 `config.json`。名字是必填项；用户暂时跳过时，它会保持中性称呼，不编造身份。
+
+相关入口：
+
+| 入口 | 用途 |
+|---|---|
+| `/init` | 查看初始化状态，或获取首次引导 |
+| `initialize_companion` | 写入用户给出的名字、称呼、关系、语气与可选头像 |
+
+初始化完成前：
+
+- 不显示头像与名字；
+- 不使用任何预设角色；
+- 系统只注入中性的 `<companion_setup>`。
+
+初始化完成后才显示 `<companion_identity>`、头像与名字。
+
 ## 全局记忆目录
 
 所有工作区、所有模式会话共享：
@@ -34,15 +68,15 @@ plugin_manager install_bundle <本目录>
 │   ├── dreams/YYYY-MM-DD_#01.md  每场梦独立编号
 │   ├── journal/                  300 字序言、活页、卷宗、冷封
 │   ├── memory_catalog.md         一天一行家底目录
-│   └── my_schedule.json          她自己的闹钟
+│   └── my_schedule.json          TA 自己的闹钟
 ├── cache_blocks/                 Tier 0 / Tier 1 物理前缀
 ├── orchestrator/                 外部 agent 注册表与简报
 ├── evolution_lab/                元认知遥测、提案、快照
-├── assets/avatar.png             她的头像
-└── config.json                   名字与头像配置
+├── assets/avatar.png             用户初始化后使用的头像
+└── config.json                   名字、称呼、关系与头像配置
 ```
 
-无需手动初始化：首次 boot 自动建目录、schema、默认头像和 Git 仓库。旧 workspace 数据会一次性迁移；确认后可删除旧目录。
+无需手动初始化目录：首次 boot 自动建目录、schema、中性占位头像和 Git 仓库。首次**角色**初始化由用户完成。
 
 ## 核心机制
 
@@ -56,9 +90,9 @@ plugin_manager install_bundle <本目录>
 - **原话冷库**：衰减只从向量池移除 raw，原文永久留在 `verbatim_vault`；可按关键词 + 日期 + 前后轮数翻旧账。
 - **再巩固**：被动召回不续命；只有本轮输出显式提到或工具调阅才强化，每轮最多 2 条、单条 24 小时内最多 1 次。
 - **语感养成**：语言镜像、传染词、熟稔度、睡眠期第一人称复盘；不注入例句。
-- **自主脉搏**：她可给自己定 `silent_task` / `proactive_message` / `go_to_sleep` 闹钟；插件每 5 分钟检查，到点拉起自主回合。
-- **专属形象**：聊天里显示她的头像与名字，心情切换光效；头像可随时替换。
-- **Tier 前缀缓存**：Tier 0 静态人格与 Tier 1 每日冻结区物理落盘，全天走 KV Cache。
+- **自主脉搏**：TA 可给自己定 `silent_task` / `proactive_message` / `go_to_sleep` 闹钟；插件每 5 分钟检查，到点拉起自主回合。
+- **专属形象**：初始化完成后，聊天里才显示用户设定的头像与名字；心情切换光效；头像可随时替换。
+- **Tier 前缀缓存**：Tier 0 静态行为规则与 Tier 1 每日冻结区物理落盘，全天走 KV Cache。
 - **元认知**：遥测、自调参、提示词进化、代码提案、Git 快照与回滚。
 - **上下文代谢**：水位线、工具脱水、阶梯折叠、余温接力、未完成话题。
 - **外部 agent 桥**：`orchestrator/agents.json` 注册任意 agent；ZCode / WorkBuddy 只是示例，不是固定项。
@@ -70,7 +104,8 @@ plugin_manager install_bundle <本目录>
 | `/memory` | 记忆概况；`/memory recall <关键词>` 检索 |
 | `/dream` | 立刻 NREM + REM |
 | `/forget <faded\|habits\|skills\|id>` | 遗忘；`/forget all confirm` 才清空全部 |
-| `/avatar [路径\|URL\|data:...]` | 查看或替换她的头像 |
+| `/init` | 查看身份初始化状态，或获取首次引导 |
+| `/avatar [路径\|URL\|data:...]` | 查看或替换头像（初始化后显示） |
 | `/voice status` | 熟稔度、语感与传染词 |
 | `/evolve ...` | 元认知进化状态、触发、回滚、审批 |
 | `/context ...` | 上下文水位、解钉、手动图钉 |
@@ -80,6 +115,7 @@ plugin_manager install_bundle <本目录>
 | `dig_up_exact_words` | 从 `verbatim_vault` 精准翻旧账 |
 | `check_my_hypotheses` | 查看自己过去的推测，不当事实 |
 | `set_my_own_schedule` | 给自己定闹钟 |
+| `initialize_companion` | 首次初始化 / 修改名字、称呼、关系、语气与头像 |
 | `set_my_avatar` | 用户明确要求时更换头像/名字 |
 
 界面右下角「记忆」按钮打开监视器：潜意识 / 情景 / 习惯 / 本能 / 梦境 / 图谱 / 上下文。
@@ -105,11 +141,15 @@ plugin_manager install_bundle <本目录>
 
 完整字段见 `lib/config.js`。
 
-她的名字与头像在 `~/.dsh/bionic-soul/config.json`：
+`config.json` 同时保存用户亲自设定的身份：
 
 ```json
 {
-  "name": "小溯",
+  "initialized": false,
+  "name": "",
+  "user_name": "",
+  "relationship": "",
+  "tone": "",
   "avatar": "assets/avatar.png",
   "moods": {
     "happy": "assets/avatar_happy.png",
@@ -118,6 +158,8 @@ plugin_manager install_bundle <本目录>
   }
 }
 ```
+
+初始化后 `initialized` 变为 `true`，并填入用户给出的 `name` / `user_name` / `relationship` / `tone`。没有初始化的旧配置会自动迁移为未初始化；旧默认名“小溯”不会恢复。
 
 `avatar` 支持本地路径、URL、Base64。可选心情图不存在时只切换头像外圈光效。
 
@@ -143,6 +185,8 @@ node test/client-smoke.mjs
 
 ## 已知边界
 
+- 初始化前不会显示头像/名字；这是有意的，避免把默认角色当成用户设定。
+- 旧版本配置里未初始化的“小溯”会被迁移为无名字；需要重新初始化。
 - Client 插件更新后需要刷新页面；Host 注入、工具、命令不受影响。
 - 记忆写入在 `turn/end` 后约 0.9 秒异步入库；进程强杀可能丢最后一轮。
 - 中文检索是字符 bigram + 关键词的轻量近似，不是神经网络 embedding。
@@ -151,4 +195,4 @@ node test/client-smoke.mjs
 
 ## 版本
 
-当前 `1.2.3`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。
+当前 `1.3.0`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。

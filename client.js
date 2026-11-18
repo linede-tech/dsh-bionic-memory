@@ -1333,7 +1333,7 @@ window.__ModuleLoader__.load({
           if (typeof document === 'undefined' || typeof MutationObserver === 'undefined') {
             return () => {};
           }
-          const MARKERS = ['【bionic·internal】', '（她忽然想起：'];
+          const MARKERS = ['【bionic·internal】', '（忽然想起：', '（她忽然想起：'];
           const style = document.createElement('style');
           style.setAttribute('data-bionic-hidden-style', '1');
           style.textContent = '[data-bionic-hidden="1"]{display:none!important}';
@@ -1476,7 +1476,7 @@ window.__ModuleLoader__.load({
           const decorate = () => {
             const sid = currentSession();
             const root = activeConversation();
-            if (!identity || !root || !sid || identitySession !== sid) {
+            if (!identity || !identity.initialized || !root || !sid || identitySession !== sid) {
               removeDecorations();
               return;
             }
