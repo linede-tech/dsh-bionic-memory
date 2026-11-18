@@ -78,6 +78,27 @@ plugin_manager install_bundle <本目录>
 
 无需手动初始化目录：首次 boot 自动建目录、schema、中性占位头像和 Git 仓库。首次**角色**初始化由用户完成。
 
+## 项目数据与本地数据是分开的
+
+| 位置 | 内容 | 是否在项目仓库 |
+|---|---|---|
+| `dsh-bionic-memory/` | 代码、预设声明、默认资源、文档、测试 | 是 |
+| `~/.dsh/bionic-soul/` | 记忆库、日记、梦境、原话、config、头像 | 否 |
+| `~/.dsh/sessions/` | 会话日志 | 否 |
+| `dsh-bionic-memory/test/*` | 临时测试目录，运行后清理 | 否（临时） |
+
+从 `1.3.1` 起，启动阶段对**已存在的本地数据只读**：
+
+- 已有 `config.json` 不会被迁移或重写；
+- 已有 Tier 0 不会被项目升级覆盖；
+- 旧配置只在内存里按“未初始化”解释，文件保持原样；
+- 只有缺失的新文件（例如首次安装的 `config.json`、中性占位头像）才会创建；
+- 写入只发生在用户明确操作时：`initialize_companion`、`/avatar`、`/dream`，以及正常对话产生的增量记忆。
+
+> 历史说明：`1.3.0` 安装时曾自动迁移过旧的 `config.json` 与 Tier 0；`1.3.1` 已移除这类启动写入。已发生的迁移不会自动回滚，需要恢复请明确确认。
+
+开发或测试时请让 `dataDir` 指向临时目录，不要指向 `~/.dsh/bionic-soul`；仓库里的 `test/` 只使用临时目录。
+
 ## 核心机制
 
 - **左脑 SQLite**：`episodic_memories`（事实）、`agent_hypotheses`（推测池）、`compressed_schemas`、`memory_edges`；`verbatim_vault` 用 FTS5 永久保存原话。
@@ -159,7 +180,7 @@ plugin_manager install_bundle <本目录>
 }
 ```
 
-初始化后 `initialized` 变为 `true`，并填入用户给出的 `name` / `user_name` / `relationship` / `tone`。没有初始化的旧配置会自动迁移为未初始化；旧默认名“小溯”不会恢复。
+初始化后 `initialized` 变为 `true`，并填入用户给出的 `name` / `user_name` / `relationship` / `tone`。没有初始化的旧配置只会被按“未初始化”读取，不会被改写；旧默认名“小溯”不会恢复。
 
 `avatar` 支持本地路径、URL、Base64。可选心情图不存在时只切换头像外圈光效。
 
@@ -186,7 +207,7 @@ node test/client-smoke.mjs
 ## 已知边界
 
 - 初始化前不会显示头像/名字；这是有意的，避免把默认角色当成用户设定。
-- 旧版本配置里未初始化的“小溯”会被迁移为无名字；需要重新初始化。
+- 旧版本配置里未初始化的“小溯”只会按未初始化读取，文件不会被启动过程改写。
 - Client 插件更新后需要刷新页面；Host 注入、工具、命令不受影响。
 - 记忆写入在 `turn/end` 后约 0.9 秒异步入库；进程强杀可能丢最后一轮。
 - 中文检索是字符 bigram + 关键词的轻量近似，不是神经网络 embedding。
@@ -195,4 +216,4 @@ node test/client-smoke.mjs
 
 ## 版本
 
-当前 `1.3.0`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。
+当前 `1.3.1`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。

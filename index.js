@@ -24,7 +24,6 @@ import { openStore } from './lib/store.js';
 import {
   SOUL_ROOT,
   ensureSoul,
-  migrateLegacy,
   readTier0,
   soulPaths,
 } from './lib/soul-storage.js';
@@ -45,7 +44,7 @@ const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const IDENTITY_SECTION = 'bionic-memory:companion-identity';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.3.0';
+const BUILD = 'bionic-1.3.1';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -264,15 +263,6 @@ export function apply(ctx, rawConfig) {
       const dataDir = resolveDataDir();
       const paths = ensureSoul({ root: dataDir, tier0Source: RULES_SOURCE, logger });
       ensureVisualAssets(dataDir);
-      const legacyDir = readDataDirPointer();
-      if (legacyDir && path.resolve(legacyDir) !== path.resolve(dataDir)) {
-        try {
-          const migrated = await migrateLegacy({ root: dataDir, legacyDir, logger });
-          if (migrated.migrated) logger?.info?.(`[bionic-memory] migrated legacy memory from ${legacyDir}`);
-        } catch (error) {
-          logger?.warn?.(`[bionic-memory] legacy migration failed: ${error?.message || error}`);
-        }
-      }
       const store = await openStore({
         dir: paths.cortex,
         dbFile: 'memory_cortex.sqlite',

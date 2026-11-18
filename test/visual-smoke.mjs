@@ -89,14 +89,26 @@ async function main() {
   const missing = await setVisualAvatar(DATA, path.join(DATA, 'nope.png'));
   check(missing.ok === false, 'missing local image is rejected');
 
-  // A config from the preset-role era must not leak its old name back in.
+  // A config from the preset-role era must not leak its old name back in, and
+  // startup must not rewrite the existing file.
   fs.writeFileSync(
     path.join(DATA, 'config.json'),
     JSON.stringify({ name: '小溯', avatar: 'assets/avatar.png', moods: {} }),
     'utf8',
   );
+  const legacyFile = fs.readFileSync(path.join(DATA, 'config.json'), 'utf8');
   const legacy = readVisualConfig(DATA);
-  check(legacy.initialized === false && legacy.name === '', 'legacy preset name is migrated to uninitialized/empty');
+  check(legacy.initialized === false && legacy.name === '', 'legacy preset name is read as uninitialized/empty');
+  check(fs.readFileSync(path.join(DATA, 'config.json'), 'utf8') === legacyFile, 'startup leaves an existing legacy config untouched');
+
+  fs.writeFileSync(
+    path.join(DATA, 'config.json'),
+    JSON.stringify({ name: '阿岚', avatar: 'assets/avatar.png', moods: {} }),
+    'utf8',
+  );
+  const customLegacy = readVisualConfig(DATA);
+  check(customLegacy.initialized === true && customLegacy.name === '阿岚', 'custom legacy name is treated as initialized in memory');
+  check(fs.readFileSync(path.join(DATA, 'config.json'), 'utf8').includes('阿岚'), 'startup leaves a custom legacy config untouched');
 
   fs.rmSync(DATA, { recursive: true, force: true });
   if (failures) {

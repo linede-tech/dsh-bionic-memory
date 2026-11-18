@@ -107,24 +107,16 @@ C:\Users\unity\.dsh\bionic-soul\
 
 - `initialized` 为 false 时，客户端不显示头像与名字，System Prompt 只注入 `<companion_setup>`；
 - 初始化后注入 `<companion_identity>`；
-- 旧的未初始化“小溯”配置会自动迁移为 `initialized: false`、空名字；
+- 旧的未初始化“小溯”配置只会按未初始化读取，文件不会被启动过程改写；
 - 想改身份时直接说“把你名字改成…”“以后叫我…”，或再次调用 `initialize_companion`。
 
-## 4. 旧 workspace-local 数据迁移
+## 4. 旧 workspace-local 数据
 
-如果之前使用过 `default-workspace/.dsh/bionic-memory`，首次 boot 会一次性迁移：
+`1.3.1` 起**移除了启动时的自动迁移**。项目升级不会读取、复制或改写旧 workspace-local 数据；当前全局目录是唯一运行数据源。
 
-- 读取 profile 指针 `<profile>/.dsh/bionic-memory-location.json`（或环境变量 `BIONIC_MEMORY_DATA_DIR`）作为**旧数据来源**；
-- 用 SQLite `VACUUM INTO` 把旧 `memory.db` 复制为 `cortex/memory_cortex.sqlite`；
-- 复制旧的 `user_linguistics.json` → `soul/emergent_voice.json`；
-- 复制旧 `daily-frozen-memory.json` 的 block → `cache_blocks/tier1_daily_frozen.md`；
-- 复制旧 `telemetry.json` / `meta-evolution.json` → `evolution_lab/`；
-- 复制旧 `proposals` / `snapshots` / `context-archive`；
-- 写入 `~/.dsh/bionic-soul/.migrated-from`，避免重复迁移；确认全局数据无误并清理旧目录后，该标记也可以删除。
+当前机器已经完成过历史迁移：全局 `cortex` 中有 40 条情景、3 条本能、2 场梦、11 条边；旧 workspace-local 目录、旧 profile 目录、profile 指针和 `.migrated-from` 均已删除。
 
-迁移**不会自动删除**旧目录。确认全局数据无误后，可以手动清理旧目录、旧指针和迁移标记。当前机器已经清理完毕，全局目录是唯一数据源。
-
-当前机器已经完成迁移并清理：全局 `cortex` 中有 40 条情景、3 条本能、2 场梦、11 条边；旧 workspace-local 目录、旧 profile 目录、profile 指针和 `.migrated-from` 均已删除。
+如果以后确实需要导入旧数据，请先备份全局目录，再手动复制或编写显式迁移脚本，不要让正常启动自动执行。
 
 ## 5. 数据目录覆盖
 
