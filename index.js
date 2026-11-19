@@ -44,7 +44,7 @@ const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const IDENTITY_SECTION = 'bionic-memory:companion-identity';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.3.2';
+const BUILD = 'bionic-1.3.3';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);

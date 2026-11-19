@@ -1476,7 +1476,7 @@ window.__ModuleLoader__.load({
           const decorate = () => {
             const sid = currentSession();
             const root = activeConversation();
-            if (!identity || !identity.initialized || !root || !sid || identitySession !== sid) {
+            if (!identity || !root || !sid || identitySession !== sid) {
               removeDecorations();
               return;
             }
@@ -1504,7 +1504,12 @@ window.__ModuleLoader__.load({
               if (img && source && img.getAttribute('src') !== source) img.src = source;
               if (img) img.alt = identity.name || '';
               const name = holder.querySelector(`.${NAME_CLASS}`);
-              if (name) name.textContent = identity.name || '';
+              const displayName = identity.initialized ? String(identity.name || '') : '';
+              if (name) {
+                name.textContent = displayName;
+                name.style.display = displayName ? '' : 'none';
+              }
+              holder.toggleAttribute('data-uninitialized', !identity.initialized);
               holder.setAttribute('data-mood', mood);
               holder.setAttribute('data-glow', identity.glow || 'calm');
               row.classList.add('bionic-identity-row');

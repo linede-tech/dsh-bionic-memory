@@ -16,7 +16,7 @@ C:\Users\<you>\.dsh\bionic-soul\
 
 记忆只在「永续记忆模式」会话里读写；所有工作区、所有模式会话共享这一个全局目录。标准会话不会被初始化或注入记忆。
 
-项目不内置预设角色：没有默认名字、性别、关系、人格或“小溯”。身份由用户首次初始化写入 `config.json`；初始化前系统只注入中性的 `<companion_setup>`，不显示头像与名字。
+项目不内置预设角色：没有默认名字、性别、关系、人格或“小溯”。身份由用户首次初始化写入 `config.json`；初始化前系统只注入中性的 `<companion_setup>`，客户端显示已配置的头像但不显示名字。
 
 ## 1. 什么时候初始化
 
@@ -105,7 +105,7 @@ C:\Users\<you>\.dsh\bionic-soul\
 }
 ```
 
-- `initialized` 为 false 时，客户端不显示头像与名字，System Prompt 只注入 `<companion_setup>`；
+- `initialized` 为 false 时，客户端只显示已配置头像、不显示名字，System Prompt 只注入 `<companion_setup>`；
 - 初始化后注入 `<companion_identity>`；
 - 旧的未初始化“小溯”配置只会按未初始化读取，文件不会被启动过程改写；
 - 想改身份时直接说“把你名字改成…”“以后叫我…”，或再次调用 `initialize_companion`。
@@ -141,7 +141,7 @@ Rename-Item "$HOME\.dsh\bionic-soul" "bionic-soul.backup-$(Get-Date -Format yyyy
 
 - `preset_health`：composition 正常；
 - `config.json`：`initialized`、`name` 已由用户完成，或明确保持未初始化；
-- 未初始化时：聊天界面不显示头像/名字，System Prompt 只有 `<companion_setup>`；
+- 未初始化时：聊天界面只显示头像、不显示名字，System Prompt 只有 `<companion_setup>`；
 - `bionic_memory { "action": "status" }`：模式内可用；
 - `/voice status`：熟稔度、传染词、句式指标；
 - `/memory`：情景/习惯/本能/梦；
