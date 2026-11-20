@@ -17,6 +17,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
 import { normalizeConfig } from './lib/config.js';
+import { recordAssistantMessage, recordToolExchange, visibleAssistantText } from './lib/dialogue.js';
 import { BionicMemoryEngine } from './lib/engine.js';
 import { createLlmHost } from './lib/llm.js';
 import { MySchedule } from './lib/schedule.js';
@@ -44,7 +45,7 @@ const CONTEXT_SECTION = 'bionic-memory:memory-context';
 const AUTONOMOUS_SECTION = 'bionic-memory:autonomous-tick';
 const IDENTITY_SECTION = 'bionic-memory:companion-identity';
 const METABOLISM_CONTEXT = 'bionic-memory:context-metabolism';
-const BUILD = 'bionic-1.3.3';
+const BUILD = 'bionic-1.3.4';
 
 export function apply(ctx, rawConfig) {
   const config = normalizeConfig(rawConfig);
@@ -717,7 +718,7 @@ export function apply(ctx, rawConfig) {
       buffer.timer = null;
     }
     const userText = buffer.user.join('\n').trim();
-    const assistantText = buffer.assistant.join('\n').trim();
+    const assistantText = visibleAssistantText(buffer);
     const turnNumber = Number.isFinite(turn) ? turn : buffer.turn;
     const userAt = Number(buffer.userAt) || 0;
     const assistantAt = Number(buffer.assistantAt) || 0;
@@ -795,6 +796,9 @@ export function apply(ctx, rawConfig) {
       if (sourceKind && sourceKind !== 'user') return;
       const text = textOfContent(message?.content);
       if (!text) return;
+      // The autonomous carrier is an internal wake mechanism, not something
+      // the user said. Never let it become an episodic user turn.
+      if (text.includes(AUTONOMOUS_MARKER) || text.startsWith('【bionic·internal】')) return;
       if (buffer.assistant.length) {
         // The previous turn never emitted a visible closer; fold it first.
         void flushSession(id, buffer.turn);
@@ -827,8 +831,10 @@ export function apply(ctx, rawConfig) {
     if (event.type === 'assistant/message') {
       if (event.data?.interrupted) return;
       const text = textOfContent(event.data?.message?.content);
-      if (text) buffer.assistant.push(text);
-      if (text || !buffer.assistantAt) buffer.assistantAt = Number(event.time) || Date.now();
+      // Keep only the last visible assistant message of the turn. Intermediate
+      // commentary that introduced a tool call is not dialogue and must not
+      // become an episode, a verbatim row or voice-training input.
+      recordAssistantMessage(buffer, text, event.time);
       if (event.data?.usage) {
         try {
           if (engine) engine.toolSchemaHash = toolSchemaHash();
@@ -842,6 +848,14 @@ export function apply(ctx, rawConfig) {
           logger?.warn?.(`[bionic-memory] cache usage observation failed: ${error?.message || error}`);
         }
       }
+      return;
+    }
+
+    if (event.type === 'tool/call' || event.type === 'tool/result') {
+      // Tool exchanges are operational telemetry, not part of the visible
+      // conversation. Drop any assistant preamble before the tool and start
+      // waiting for the final answer after the last tool result.
+      recordToolExchange(buffer);
       return;
     }
 

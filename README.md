@@ -107,6 +107,7 @@ plugin_manager install_bundle <本目录>
 
 - **左脑 SQLite**：`episodic_memories`（事实）、`agent_hypotheses`（推测池）、`compressed_schemas`、`memory_edges`；`verbatim_vault` 用 FTS5 永久保存原话。
 - **四层记忆**：潜意识白板 → 情景记忆 → 压缩习惯 → If-Then 本能；按艾宾浩斯曲线从 raw → summary → impression 衰减。
+- **情景只记对话**：只保存用户消息与最后一轮可见回复；思考过程、工具调用与工具结果不进入情景、原话冷库或语感训练。
 - **事实与推测隔离**：默认召回只查 `user_stated`；AI 旧推测进 `agent_hypotheses`，只能按需查看。
 - **严格 JSON 批处理**：NREM 折叠、降维、本能提炼、REM 梦境；解析失败自动走确定性兜底。
 - **每日做梦**：`/dream` 可随时触发；同日多场梦写 `_#01`、`_#02`，不覆盖。
@@ -203,6 +204,7 @@ node test/bridge-smoke.mjs
 node test/journal-smoke.mjs
 node test/vault-catalog-smoke.mjs
 node test/visual-smoke.mjs
+node test/dialogue-smoke.mjs
 node test/client-smoke.mjs
 ```
 
@@ -220,4 +222,4 @@ node test/client-smoke.mjs
 
 ## 版本
 
-当前 `1.3.3`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。
+当前 `1.3.4`。详细变更见 Git 历史与 `docs/INITIALIZATION.md`。
